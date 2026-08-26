@@ -1,0 +1,27 @@
+{
+  "name": "ferret-fights-back",
+  "version": "1.0.0",
+  "description": "A 2D pixel-art top-down survival bullet-hell game. Play a lab-experimented ferret defending a Yellowstone-inspired forest from poachers, machines and the Les Nest corporation.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "serve": "python3 -m http.server 8080",
+    "test": "node tools/functional.mjs",
+    "smoke": "node tools/smoke.mjs",
+    "scenes": "node tools/scene.mjs",
+    "artsheet": "node tools/artshot.mjs"
+  },
+  "keywords": [
+    "game",
+    "pixel-art",
+    "bullet-hell",
+    "survival",
+    "canvas",
+    "ferret"
+  ],
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

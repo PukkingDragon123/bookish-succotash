@@ -1,0 +1,1156 @@
+// The game itself: owns the world, every entity list, the wave director and
+// the UI, and provides the shared services (spawn a bullet, explode, toast,
+// drop loot) that the entity classes call back into.
+
+import { Renderer, VIEW_W, VIEW_H } from './engine/canvas.js';
+import { Input } from './engine/input.js';
+import { Loop } from './engine/loop.js';
+import { audio } from './engine/audio.js';
+import { particles } from './engine/particles.js';
+import { drawText } from './engine/font.js';
+import { clamp, lerp, dist2, TAU } from './engine/math.js';
+import { rnd, pick, chance } from './engine/rng.js';
+
+import { P } from './art/palette.js';
+import { itemIcon, warnMarkerFrames } from './art/items.js';
+import { nestLogoSprite } from './art/machines.js';
+
+import { World, worldObjectSprite } from './world/world.js';
+import { FireSim } from './world/fire.js';
+import { TS, TILES, T, isWater, isSolid, drawWaterShimmer } from './world/tiles.js';
+
+import { Player } from './entities/player.js';
+import { Bullets } from './entities/bullets.js';
+import { Enemy, Wreck } from './entities/enemies.js';
+import { NPC, spawnNPCs } from './entities/npc.js';
+import { Wildlife } from './entities/wildlife.js';
+import { PickupManager } from './entities/pickups.js';
+import { Mortar, Firebomb, SawTrap, SmokeCloud, Barricade, AllyTurret, SteamBurst } from './entities/hazards.js';
+
+import { Hud } from './ui/hud.js';
+import { Panels } from './ui/panels.js';
+import { Dialogue } from './ui/dialogue.js';
+
+import { RESOURCES, WEAPONS, CHIPS, randomChipKey } from './systems/defs.js';
+import { Director, PHASE } from './systems/waves.js';
+
+export const STATE = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead', VICTORY: 'victory' };
+
+export class Game {
+  constructor(canvas, seed) {
+    this.seed = seed >>> 0;
+    this.r = new Renderer(canvas);
+    this.input = new Input(canvas);
+    this.state = STATE.TITLE;
+    this.time = 0;
+    this.dayTime = 0.28;             // 0..1 through the day; starts mid-morning
+    this.nightFactor = 0;
+    this.hitFlash = 0;
+    this.slowT = 0;
+    this.slowScale = 1;
+    this.prompt = null;
+    this.boss = null;
+    this.intelLevel = 0;
+    this.surveyLevel = 0;
+    this.revives = 0;
+    this.smokeBombCharges = 0;
+    this.geyserControl = false;
+    this.craftCounts = {};
+    this.rescued = 0;
+    this.rescueTarget = 0;
+    this.stats = { treesLost: 0, treesSaved: 0, animalsLost: 0, kills: 0, questsDone: 0 };
+    this.flyers = [];
+    this.titleT = 0;
+    this.deathT = 0;
+    this.victoryT = 0;
+
+    this.build();
+
+    this.loop = new Loop((dt) => this.update(dt), () => this.render());
+  }
+
+  build() {
+    this.world = new World(this.seed, 200, 160);
+    this.fire = new FireSim(this.world);
+    this.player = new Player(this.world.den.x, this.world.den.y + 26);
+    this.bullets = new Bullets();
+    this.pickups = new PickupManager();
+    this.enemies = [];
+    this.wrecks = [];
+    this.hazards = [];
+    this.npcs = spawnNPCs(this.world, this.seed);
+    this.wildlife = new Wildlife(this.world, this.seed);
+    this.director = new Director(this.seed);
+    this.hud = new Hud();
+    this.panels = new Panels();
+    this.dialogue = new Dialogue();
+    this.drawList = [];
+
+    this.r.camera.bounds = { minX: 0, minY: 0, maxX: this.world.pxW, maxY: this.world.pxH };
+    this.r.camera.x = this.player.x;
+    this.r.camera.y = this.player.y;
+
+    // A starting kit so wave 1 is survivable while you learn the controls.
+    this.player.inv.add('ammo', 30);
+    this.player.inv.add('berries', 3);
+  }
+
+  start() {
+    this.loop.start();
+  }
+
+  get uiBlocksInput() {
+    return this.panels.open || this.state !== STATE.PLAY;
+  }
+
+  // ======================================================================
+  //  UPDATE
+  // ======================================================================
+  update(dt) {
+    if (this.state === STATE.TITLE) return this.updateTitle(dt);
+    if (this.state === STATE.VICTORY) return this.updateEnding(dt, true);
+    if (this.state === STATE.DEAD) return this.updateEnding(dt, false);
+
+    if (this.input.isPressed('pause') && !this.panels.open) {
+      this.state = this.state === STATE.PAUSED ? STATE.PLAY : STATE.PAUSED;
+      audio.play('ui');
+      this.input.endFrame();
+      return;
+    }
+    if (this.state === STATE.PAUSED) {
+      if (this.input.keyPressed('KeyM')) audio.setMuted(audio.enabled);
+      this.input.endFrame();
+      return;
+    }
+
+    // slow-motion on big hits
+    if (this.slowT > 0) {
+      this.slowT -= dt;
+      if (this.slowT <= 0) this.slowScale = 1;
+    }
+    const sdt = dt * this.slowScale;
+
+    this.time += sdt;
+    this.hitFlash = Math.max(0, this.hitFlash - dt * 2.4);
+
+    // day/night: a full cycle is long enough that most runs see one dusk
+    this.dayTime = (this.dayTime + sdt / 420) % 1;
+    const nightRaw = clamp((Math.cos(this.dayTime * TAU) + 0.25) * 1.1, -1, 1);
+    this.nightFactor = clamp(-nightRaw, 0, 1);
+
+    // panels & dialogue first: they can swallow input
+    this.handlePanelKeys();
+    this.panels.update(sdt, this);
+    this.dialogue.update(sdt);
+    this.hud.update(dt);
+
+    this.world.update(sdt);
+    this.fire.update(sdt, this);
+    this.director.update(sdt, this);
+
+    this.player.update(sdt, this);
+    this.updateInteraction();
+    this.handleAbilityKeys();
+
+    this.bullets.update(sdt, this);
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      e.update(sdt, this);
+      if (e.dead) this.enemies.splice(i, 1);
+    }
+    for (let i = this.wrecks.length - 1; i >= 0; i--) {
+      const w = this.wrecks[i];
+      w.update(sdt, this);
+      if (w.dead) this.wrecks.splice(i, 1);
+    }
+    for (let i = this.hazards.length - 1; i >= 0; i--) {
+      const h = this.hazards[i];
+      h.update(sdt, this);
+      if (h.dead) this.hazards.splice(i, 1);
+    }
+    for (const n of this.npcs) n.update(sdt, this);
+    this.wildlife.update(sdt, this);
+    this.pickups.update(sdt, this);
+    this.updateFlyers(sdt);
+    this.updateGeysers(sdt);
+    particles.update(sdt);
+
+    // camera leads slightly toward the cursor: you see what you aim at
+    const mw = this.r.camera.toWorld(this.input.mouse.sx, this.input.mouse.sy);
+    const lx = clamp((mw.x - this.player.x) * 0.22, -54, 54);
+    const ly = clamp((mw.y - this.player.y) * 0.22, -40, 40);
+    this.r.camera.follow(this.player.x + lx, this.player.y - 6 + ly);
+    this.r.camera.update(dt);
+
+    this.updateAudioMood(dt);
+    this.input.endFrame();
+  }
+
+  updateTitle(dt) {
+    this.titleT += dt;
+    this.time += dt;
+    particles.update(dt);
+    this.r.camera.follow(this.world.den.x + Math.cos(this.titleT * 0.08) * 90, this.world.den.y + Math.sin(this.titleT * 0.06) * 60);
+    this.r.camera.update(dt);
+    this.world.update(dt * 0.5);
+    this.wildlife.update(dt, this);
+    if (this.input.anyKeyPressed || this.input.mouse.pressed) {
+      audio.resume();
+      audio.play('levelup');
+      this.state = STATE.PLAY;
+      this.hud.showAnnounce('DEFEND THE BASIN', 'THEY COME IN WAVES', P.ui, 4);
+      this.toast('WASD MOVE  -  MOUSE AIM/FIRE  -  E INTERACT/GATHER  -  TAB CRAFT', P.uiDim, 9);
+    }
+    this.input.endFrame();
+  }
+
+  updateEnding(dt, won) {
+    this.time += dt;
+    if (won) this.victoryT += dt; else this.deathT += dt;
+    particles.update(dt);
+    this.r.camera.update(dt);
+    if ((won ? this.victoryT : this.deathT) > 2.5 && (this.input.anyKeyPressed || this.input.mouse.pressed)) {
+      if (won) {
+        this.director.goEndless();
+        this.state = STATE.PLAY;
+        this.hud.showAnnounce('THEY WILL COME BACK', 'HOLD THE BASIN', P.uiWarn, 4);
+      } else {
+        this.respawnPlayer();
+      }
+    }
+    this.input.endFrame();
+  }
+
+  updateAudioMood(dt) {
+    const d = this.director;
+    let target = 0.1;
+    if (d.phase === PHASE.ASSAULT) target = this.boss ? 1 : 0.62;
+    else if (d.phase === PHASE.FIRE) target = 0.9;
+    else if (d.phase === PHASE.PREP) target = d.timer < 8 ? 0.4 : 0.14;
+    if (this.player.hp < this.player.maxHp * 0.3 && d.phase !== PHASE.PREP) target = Math.min(1, target + 0.2);
+    audio.setIntensity(target);
+    audio.update(dt);
+  }
+
+  handlePanelKeys() {
+    const i = this.input;
+    if (i.keyPressed('Tab')) this.panels.toggle('craft');
+    if (i.keyPressed('KeyC')) this.panels.toggle('chips');
+    if (i.keyPressed('KeyM')) this.panels.toggle('map');
+  }
+
+  handleAbilityKeys() {
+    if (this.uiBlocksInput) return;
+    const i = this.input;
+    const p = this.player;
+
+    // throw water where you're aiming
+    if (i.isPressed('douse')) {
+      if (p.inv.take('water', 1)) {
+        const mw = this.r.camera.toWorld(i.mouse.sx, i.mouse.sy);
+        const d = Math.min(120, Math.hypot(mw.x - p.x, mw.y - p.y));
+        const a = Math.atan2(mw.y - p.y, mw.x - p.x);
+        const tx = p.x + Math.cos(a) * d, ty = p.y + Math.sin(a) * d;
+        const n = this.fire.extinguish(tx, ty, 46, 1.4);
+        particles.water(tx, ty, 26);
+        particles.ring(tx, ty, 4, 46, 0.35, P.waterFoam, 2, false);
+        audio.play('splash');
+        if (n) this.toast(n + ' FIRES OUT', P.waterFoam, 1.6);
+      } else {
+        this.toast('NO WATER - FILL AT THE RIVER [E]', P.uiWarn);
+        audio.play('deny');
+      }
+    }
+
+    // eat / patch up
+    if (i.isPressed('use')) {
+      if (p.hp >= p.maxHp) { this.toast('ALREADY PATCHED UP', P.uiDim, 1.2); }
+      else if (p.inv.take('meds', 1)) { p.heal(45); audio.play('rescue', { vol: 0.6 }); }
+      else if (p.inv.take('berries', 1)) { p.heal(12); audio.play('pick'); }
+      else { this.toast('NOTHING TO EAT', P.uiWarn); audio.play('deny'); }
+    }
+
+    // smoke bomb
+    if (i.isPressed('smoke')) {
+      if (this.smokeBombCharges > 0) {
+        this.smokeBombCharges--;
+        const mw = this.r.camera.toWorld(i.mouse.sx, i.mouse.sy);
+        this.smokeBomb(mw.x, mw.y, 56);
+        this.toast('SMOKE (' + this.smokeBombCharges + ' LEFT)', P.uiDim, 1.4);
+      } else if (this.geyserControl) {
+        this.wakeNearestGeyser();
+      } else {
+        audio.play('deny');
+      }
+    }
+  }
+
+  // ======================================================================
+  //  INTERACTION
+  // ======================================================================
+  /** True when something more specific than "gather" wants the E key. */
+  interactPriority() { return !!this.prompt && this.prompt.kind !== 'gather'; }
+
+  updateInteraction() {
+    const p = this.player;
+    this.prompt = null;
+    if (p.dead) return;
+    let best = null, bestD = Infinity;
+
+    const consider = (obj, kind, label, x, y, range) => {
+      const d = dist2(p.x, p.y, x, y);
+      if (d < range * range && d < bestD) { bestD = d; best = { obj, kind, label, x, y: y - 26 }; }
+    };
+
+    // carrying an animal? the only thing that matters is getting it home
+    if (p.carrying) {
+      const den = this.world.den;
+      const d = dist2(p.x, p.y, den.x, den.y);
+      if (d < 46 * 46) consider(null, 'dropoff', 'RELEASE AT THE DEN', den.x, den.y, 46);
+      else this.prompt = { kind: 'carry', label: 'CARRY IT TO THE DEN', x: p.x, y: p.y - 34 };
+      if (best) this.prompt = best;
+      if (this.input.isPressed('interact') && best && best.kind === 'dropoff' && !this.uiBlocksInput) this.releaseAnimal();
+      return;
+    }
+
+    for (const n of this.npcs) {
+      const lbl = n.currentPrompt(this);
+      if (lbl) consider(n, 'npc', lbl, n.x, n.y, 30);
+    }
+    for (const w of this.wrecks) {
+      if (!w.looted) consider(w, 'wreck', w.chipKey ? 'RIP OUT CHIP' : 'STRIP FOR SCRAP', w.x, w.y, 26);
+    }
+    const trapped = this.wildlife.nearestRescuable(p.x, p.y, 30);
+    if (trapped) consider(trapped, 'rescue', 'PICK UP ' + trapped.def.name.toUpperCase(), trapped.x, trapped.y, 30);
+
+    // water source
+    if (!p.inv.isFull('water')) {
+      for (const [dx, dy] of [[0, 0], [14, 0], [-14, 0], [0, 14], [0, -14]]) {
+        const t = this.world.tileAtPx(p.x + dx, p.y + dy);
+        if (isWater(t) && !TILES[t].hot) { consider(null, 'water', 'FILL WATER', p.x + dx, p.y + dy, 22); break; }
+      }
+    }
+
+    for (const pr of this.world.props) {
+      if (pr.type !== 'station') continue;
+      consider(pr, 'station', 'USE ' + pr.station.toUpperCase(), pr.x, pr.y, 30);
+    }
+
+    if (!best) {
+      const node = this.world.nearestNode(p.x, p.y, 22);
+      if (node) {
+        const verb = node.def.tool === 'axe' ? 'CHOP' : node.def.tool === 'pick' ? 'MINE' : 'GATHER';
+        consider(node, 'gather', verb + ' ' + node.type.toUpperCase(), node.x, node.y, 26);
+      }
+    }
+
+    this.prompt = best;
+    if (!best || this.uiBlocksInput) return;
+
+    // dialogue: E advances the typewriter before it triggers anything else
+    if (this.input.isPressed('interact')) {
+      if (this.dialogue.isOpen && this.dialogue.advance()) return;
+      switch (best.kind) {
+        case 'npc': best.obj.interact(this); break;
+        case 'wreck': best.obj.loot(this); break;
+        case 'rescue': this.pickUpAnimal(best.obj); break;
+        case 'water': {
+          const n = p.inv.add('water', p.inv.cap('water'));
+          if (n > 0) { audio.play('splash', { vol: 0.5 }); particles.water(best.x, best.y, 8); this.toast('WATER FILLED', P.waterFoam, 1.4); }
+          break;
+        }
+        case 'station': this.panels.toggle('craft'); break;
+        default: break;
+      }
+    }
+  }
+
+  pickUpAnimal(a) {
+    const p = this.player;
+    a.trapped = false;
+    a.carried = true;
+    p.carrying = { animal: a, sprite: a.sprite };
+    this.wildlife.animals = this.wildlife.animals.filter(x => x !== a);
+    audio.play('pickup');
+    this.toast('CARRY IT TO THE DEN', P.uiGood, 3);
+    particles.text(p.x, p.y - 26, a.def.name.toUpperCase(), P.uiGood);
+  }
+
+  releaseAnimal() {
+    const p = this.player;
+    const c = p.carrying;
+    if (!c) return;
+    const a = c.animal;
+    a.carried = false;
+    a.trapped = false;
+    a.x = this.world.den.x + rnd(-24, 24);
+    a.y = this.world.den.y + rnd(16, 34);
+    a.state = 'graze';
+    a.hp = Math.max(a.hp, a.maxHp * 0.5);
+    this.wildlife.animals.push(a);
+    p.carrying = null;
+    p.animalsRescued++;
+    this.rescued++;
+    audio.play('rescue');
+    particles.ring(a.x, a.y, 4, 40, 0.6, P.uiGood, 2, true);
+    particles.text(a.x, a.y - 20, 'SAFE', P.uiGood, { life: 1.4 });
+    this.toast('RESCUED  ' + this.rescued + '/' + Math.max(this.rescueTarget, this.rescued), P.uiGood, 2.6);
+  }
+
+  // ======================================================================
+  //  SERVICES used by entities
+  // ======================================================================
+  toast(text, color, seconds) { this.hud.toast(text, color, seconds); }
+  announce(title, sub, color, seconds) { this.hud.showAnnounce(title, sub, color, seconds); }
+  weaponName(key) { return WEAPONS[key] ? WEAPONS[key].name : key; }
+
+  slowmo(scale, seconds) { this.slowScale = scale; this.slowT = seconds; }
+
+  spawnBullet(o) { return this.bullets.spawn(o); }
+
+  spawnAllyBullet(npc, target, kind, damage, speed, offset = 0) {
+    const a = Math.atan2(target.y - 6 - (npc.y - 8), target.x - npc.x) + offset;
+    this.bullets.spawn({
+      x: npc.x, y: npc.y - 8,
+      vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+      damage, friendly: true, kind, life: 1.6, owner: npc, knock: 20,
+    });
+  }
+
+  spawnEnemy(kind, x, y, level = 1) {
+    x = clamp(x, 24, this.world.pxW - 24);
+    y = clamp(y, 24, this.world.pxH - 24);
+    // never spawn inside a rock
+    let guard = 0;
+    while (isSolid(this.world.tileAtPx(x, y)) && guard++ < 24) {
+      x += rnd(-24, 24); y += rnd(-24, 24);
+      x = clamp(x, 24, this.world.pxW - 24);
+      y = clamp(y, 24, this.world.pxH - 24);
+    }
+    const e = new Enemy(kind, x, y, level);
+    this.enemies.push(e);
+    particles.ring(x, y, 2, 26, 0.4, P.nestEye, 2, true);
+    return e;
+  }
+
+  callReinforcement(x, y) {
+    const a = rnd(TAU);
+    this.spawnEnemy(pick(['poacher', 'drone', 'trapper']), x + Math.cos(a) * 190, y + Math.sin(a) * 160, this.director.wave);
+  }
+
+  spawnHazard(kind, x, y) {
+    if (kind === 'sawtrap') this.hazards.push(new SawTrap(x, y));
+  }
+
+  spawnMortar(x, y, delay, radius, damage, owner) {
+    this.hazards.push(new Mortar(x, y, delay, radius, damage, owner));
+  }
+
+  spawnFirebomb(x, y, delay, owner, silent = false) {
+    this.hazards.push(new Firebomb(x, y, delay, owner, silent));
+  }
+
+  smokeBomb(x, y, radius) {
+    this.hazards.push(new SmokeCloud(x, y, radius));
+    particles.smoke(x, y, 18, { life: 2.2, size: 3 });
+    audio.play('explode', { vol: 0.4 });
+  }
+
+  steamBurst(x, y) {
+    this.hazards.push(new SteamBurst(x, y, 2.4, true));
+    audio.play('geyser', { vol: 0.6 });
+  }
+
+  buildAllyTurret(x, y) {
+    this.hazards.push(new AllyTurret(x, y));
+    this.toast('SENTRY ONLINE', P.uiAccent, 3);
+  }
+
+  buildBarricades(tier) {
+    const den = this.world.den;
+    const n = 6 + tier * 4;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU;
+      const rad = 52 + tier * 6;
+      const x = den.x + Math.cos(a) * rad;
+      const y = den.y + Math.sin(a) * rad * 0.85;
+      if (isSolid(this.world.tileAtPx(x, y))) continue;
+      this.hazards.push(new Barricade(x, y));
+    }
+    this.toast('THE DEN IS WALLED', P.barkLight, 3);
+    audio.play('craft');
+  }
+
+  surveyBasin(level) {
+    this.surveyLevel = Math.max(this.surveyLevel, level);
+    this.panels.mapDirty = true;
+    this.toast('BASIN SURVEYED - CHECK THE MAP [M]', P.uiGood, 4);
+  }
+
+  dropPickup(item, count, x, y) { return this.pickups.drop('resource', item, x, y, { count }); }
+
+  /** The little arc a resource makes when it leaves your pack for an NPC. */
+  flyItem(item, x0, y0, x1, y1, dur = 0.4) {
+    this.flyers.push({ item, x0, y0, x1, y1, t: 0, dur });
+  }
+
+  updateFlyers(dt) {
+    for (let i = this.flyers.length - 1; i >= 0; i--) {
+      const f = this.flyers[i];
+      f.t += dt;
+      if (f.t >= f.dur) {
+        particles.burst(f.x1, f.y1, 4, { colors: [P.favor, '#fff'], speed: 40, life: 0.3, additive: true });
+        this.flyers.splice(i, 1);
+      }
+    }
+  }
+
+  updateGeysers(dt) {
+    // Only wake up cones the player could plausibly be standing near; the basin
+    // has dozens and every eruption is a particle-heavy hazard.
+    for (const g of this.world.geysers) {
+      if (!g.justErupted) continue;
+      g.justErupted = false;
+      if (dist2(g.x, g.y, this.player.x, this.player.y) > 520 * 520) continue;
+      if (this.r.camera.visible(g.x, g.y, 200)) audio.play('geyser', { vol: 0.5 });
+      this.hazards.push(new SteamBurst(g.x, g.y - 8, 3.2, false));
+    }
+  }
+
+  wakeNearestGeyser() {
+    let best = null, bd = Infinity;
+    for (const g of this.world.geysers) {
+      const d = dist2(g.x, g.y, this.player.x, this.player.y);
+      if (d < bd) { bd = d; best = g; }
+    }
+    if (best && bd < 400 * 400) {
+      this.world.triggerGeyser(best);
+      this.toast('GEYSER WOKEN', P.springHot, 2);
+    } else {
+      this.toast('NO CONE IN RANGE', P.uiDim, 1.6);
+      audio.play('deny');
+    }
+  }
+
+  // --- combat queries ------------------------------------------------------
+  nearestEnemy(x, y, range, exclude = null) {
+    let best = null, bd = range * range;
+    for (const e of this.enemies) {
+      if (e.dead || e === exclude) continue;
+      if (e.charmT > 0 && exclude === null) continue;   // hijacked machines are friendly
+      const d = dist2(x, y, e.x, e.y);
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+
+  nearestFire(x, y, range) {
+    const f = this.fire;
+    if (f.burning.size === 0) return null;
+    let best = null, bd = range * range;
+    let n = 0;
+    for (const idx of f.burning) {
+      if ((n++ & 1) !== 0) continue;
+      const tx = (idx % f.w) * TS + 8, ty = ((idx / f.w) | 0) * TS + 8;
+      const d = dist2(x, y, tx, ty);
+      if (d < bd) { bd = d; best = { x: tx, y: ty }; }
+    }
+    return best;
+  }
+
+  fireNear(x, y, range) { return !!this.nearestFire(x, y, range); }
+
+  /** Resolve one friendly bullet against enemies. Returns 'consumed' if gone. */
+  hitEnemies(b) {
+    for (const e of this.enemies) {
+      if (e.dead || e.spawnT > 0) continue;
+      if (e.charmT > 0) continue;
+      const rr = e.r + b.radius;
+      if (dist2(b.x, b.y, e.x, e.y) > rr * rr) continue;
+      if (b.hits && b.hits.has(e.id)) continue;
+      const dmg = e.damage(b.damage, this, b);
+      particles.text(e.x + rnd(-4, 4), e.y - e.h * 0.6, String(Math.round(dmg)), b.damage > 20 ? P.fire1 : P.ui, { life: 0.5, scale: 1 });
+      if (b.chain > 0) this.chainLightning(e, b, b.chain);
+      else if (b.arcChance && Math.random() < b.arcChance) this.chainLightning(e, b, 1);
+      if (b.aoe > 0) { b.alive = false; this.explode(b.x, b.y, b.aoe, b.damage, true, b.owner); return 'consumed'; }
+      if (b.pierce > 0) {
+        b.pierce--;
+        if (!b.hits) b.hits = new Set();
+        b.hits.add(e.id);
+        return 'pierced';
+      }
+      b.alive = false;
+      return 'consumed';
+    }
+    // friendly fire can also break saw traps and enemy hardware
+    for (const h of this.hazards) {
+      if (!h.damage || h.dead) continue;
+      if (!(h instanceof SawTrap)) continue;
+      const rr = h.r + b.radius;
+      if (dist2(b.x, b.y, h.x, h.y) < rr * rr) {
+        h.damage(b.damage, this);
+        b.alive = false;
+        return 'consumed';
+      }
+    }
+    return null;
+  }
+
+  hitAllies(b) {
+    for (const n of this.npcs) {
+      if (!n.recruited || n.downT > 0) continue;
+      const rr = n.r + b.radius;
+      if (dist2(b.x, b.y, n.x, n.y - 6) < rr * rr) {
+        n.damage(b.damage, this);
+        b.alive = false;
+        return 'consumed';
+      }
+    }
+    for (const h of this.hazards) {
+      if (h.dead) continue;
+      if (h instanceof Barricade || h instanceof AllyTurret) {
+        const rr = h.r + b.radius;
+        if (dist2(b.x, b.y, h.x, h.y - 6) < rr * rr) {
+          h.hp -= b.damage;
+          b.alive = false;
+          particles.sparks(b.x, b.y, 3, P.nestSteelHi);
+          return 'consumed';
+        }
+      }
+    }
+    return null;
+  }
+
+  chainLightning(from, b, jumps) {
+    let src = from;
+    const hit = new Set([from.id]);
+    for (let i = 0; i < jumps; i++) {
+      let best = null, bd = (b.chainRange || 64) ** 2;
+      for (const e of this.enemies) {
+        if (e.dead || hit.has(e.id) || e.charmT > 0) continue;
+        const d = dist2(src.x, src.y, e.x, e.y);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (!best) break;
+      hit.add(best.id);
+      best.damage(b.damage * 0.7, this, null);
+      this.drawArcs = this.drawArcs || [];
+      this.drawArcs.push({ x1: src.x, y1: src.y - 6, x2: best.x, y2: best.y - 6, life: 0.16 });
+      particles.sparks(best.x, best.y - 6, 4, P.cyber);
+      src = best;
+    }
+    audio.play('sparker', { vol: 0.4 });
+  }
+
+  explode(x, y, radius, damage, friendly, owner) {
+    particles.burst(x, y, 22, { colors: [P.fire1, P.fire2, P.fire3], speed: 190, life: 0.55, additive: true, vz: 100 });
+    particles.smoke(x, y, 8, { life: 1.6, size: 3 });
+    particles.ring(x, y, 4, radius, 0.34, P.fire2, 2, true);
+    this.r.camera.addShake(radius > 40 ? 5 : 3);
+    audio.play('explode', { vol: 0.7 });
+    if (friendly) {
+      this.damageEnemiesAt(x, y, radius, damage, owner);
+      this.damageTreesAt(x, y, radius * 0.5, 1);
+    } else {
+      const p = this.player;
+      const d = Math.sqrt(dist2(x, y, p.x, p.y - 6));
+      if (d < radius && !p.dead) p.damage(damage * clamp(1 - d / radius, 0.25, 1), this);
+      for (const n of this.npcs) {
+        if (!n.recruited) continue;
+        const dn = Math.sqrt(dist2(x, y, n.x, n.y));
+        if (dn < radius) n.damage(damage * 0.6 * clamp(1 - dn / radius, 0.2, 1), this);
+      }
+      for (const a of this.wildlife.animals) {
+        if (dist2(x, y, a.x, a.y) < radius * radius) a.damage(damage * 0.5, this, true);
+      }
+    }
+  }
+
+  damageEnemiesAt(x, y, radius, damage, owner) {
+    for (const e of this.enemies) {
+      if (e.dead || e.charmT > 0) continue;
+      const d = Math.sqrt(dist2(x, y, e.x, e.y));
+      if (d < radius + e.r) e.damage(damage * clamp(1 - d / (radius + e.r), 0.3, 1), this, null);
+    }
+  }
+
+  markEnemies(x, y, radius, seconds) {
+    for (const e of this.enemies) {
+      if (dist2(x, y, e.x, e.y) < radius * radius) e.markT = Math.max(e.markT, seconds);
+    }
+  }
+
+  healAllies(n) {
+    for (const npc of this.npcs) if (npc.recruited) npc.heal(n);
+  }
+
+  damageTreesAt(x, y, radius, dmg) {
+    const near = this.world.near(x, y, radius + 12);
+    for (const o of near) {
+      if (o.objType !== 'node' || !o.alive || o.def.art !== 'tree') continue;
+      if (dist2(x, y, o.x, o.y) > radius * radius) continue;
+      const yields = this.world.hitNode(o, dmg);
+      if (yields) this.onTreeFelledByEnemy(o);
+    }
+  }
+
+  // --- scan pulse ----------------------------------------------------------
+  onScan(p) {
+    this.markEnemies(p.x, p.y, 200, 6);
+    this.scanT = 1.6;
+    for (const e of this.enemies) {
+      if (dist2(p.x, p.y, e.x, e.y) < 200 * 200) particles.text(e.x, e.y - e.h - 4, String(Math.ceil(e.hp)), P.cyber, { life: 1.4 });
+    }
+    const near = this.world.near(p.x, p.y, 180);
+    let n = 0;
+    for (const o of near) {
+      if (o.objType !== 'node' || !o.alive) continue;
+      if (!['iron', 'copper', 'obsidian', 'coal', 'sulfur', 'saltpeter'].includes(o.type)) continue;
+      if (n++ > 24) break;
+      particles.ring(o.x, o.y - 4, 2, 12, 0.8, RESOURCES[o.def.yields[0][0]] ? RESOURCES[o.def.yields[0][0]].color : P.cyber, 1, true);
+    }
+  }
+
+  // ======================================================================
+  //  EVENT HOOKS
+  // ======================================================================
+  onEnemyKilled(e) {
+    this.stats.kills++;
+    this.player.onKill(this);
+    const def = e.def;
+
+    // loot
+    for (const [item, n, p] of def.loot || []) {
+      if (Math.random() > p) continue;
+      const count = Math.max(1, Math.round(n * rnd(0.6, 1.2)));
+      for (let i = 0; i < Math.min(count, 6); i++) {
+        this.pickups.drop('resource', item, e.x + rnd(-8, 8), e.y + rnd(-6, 6), { count: Math.ceil(count / Math.min(count, 6)) });
+      }
+    }
+
+    if (def.machine) {
+      // a machine leaves a husk with a chip still in its head
+      const chips = def.chips || 1;
+      for (let i = 0; i < chips; i++) {
+        const key = Math.random() < (def.chipChance || 0) ? randomChipKey(Math.random, def.boss ? 3 : 0) : null;
+        const wx = e.x + (i === 0 ? 0 : rnd(-26, 26));
+        const wy = e.y + (i === 0 ? 0 : rnd(-20, 20));
+        this.wrecks.push(new Wreck(wx, wy, def.species, key, def.boss ? 6 : 2));
+      }
+      if (def.chipChance > 0) this.toast('WRECK LEFT BEHIND - PRESS E TO RIP THE CHIP', P.cyber, 3.2);
+    }
+
+    if (def.boss) {
+      this.boss = null;
+      this.announce(def.name + ' DOWN', 'THE BASIN BREATHES', P.uiGood, 4.5);
+      this.slowmo(0.25, 1.1);
+      this.r.camera.addShake(12);
+      for (let i = 0; i < 6; i++) {
+        this.pickups.drop('resource', 'gunpowder', e.x + rnd(-24, 24), e.y + rnd(-20, 20), { count: 2 });
+      }
+    }
+  }
+
+  onTreeBurned(node) {
+    this.stats.treesLost++;
+  }
+
+  onTreeFelledByEnemy(node) {
+    this.stats.treesLost++;
+    if (chance(0.4)) this.toast('THEY TOOK A TREE', P.uiWarn, 1.8);
+  }
+
+  onAnimalLost(a, byFire, byPoacher) {
+    this.stats.animalsLost++;
+    if (a.def.kin) this.toast('A FERRET IS GONE', P.uiBad, 3);
+  }
+
+  onQuestAccepted(npc, req) {
+    this.toast('REQUEST ACCEPTED: ' + npc.name.toUpperCase(), P.favor, 3);
+    // The handover is physical and never explained by a menu, so say it once.
+    if (!this._taughtHandover) {
+      this._taughtHandover = true;
+      this.toast('BRING THE MATERIALS AND STAND NEXT TO THEM', P.ui, 7);
+    }
+  }
+
+  onQuestComplete(npc, req) {
+    this.stats.questsDone++;
+  }
+
+  onRecruit(npc) {
+    this.announce(npc.name.toUpperCase() + ' JOINS YOU', npc.data.abilityName.toUpperCase(), P.favor, 4);
+  }
+
+  onWaveStart(wave) {
+    // survey markers where the enemies are coming from
+    for (const pt of this.director.spawnPoints) {
+      particles.ring(pt.x, pt.y, 6, 60, 0.9, P.nestEye, 2, true);
+    }
+  }
+
+  onWaveCleared(wave) {
+    const bonus = 4 + wave;
+    this.player.inv.add('ammo', bonus);
+    this.toast('SALVAGE: +' + bonus + ' ROUNDS', P.uiGood, 2.4);
+  }
+
+  onFireEventStart() {
+    this.hitFlash = 0.6;
+    this.r.camera.addShake(8);
+  }
+
+  onFireEventEnd() {
+    const lost = this.stats.treesLost;
+    this.toast('TREES LOST: ' + lost + '   ANIMALS SAVED: ' + this.rescued, P.ui, 6);
+  }
+
+  bossPhase(boss, phase) {
+    this.r.camera.addShake(6);
+    this.slowmo(0.4, 0.4);
+    particles.ring(boss.x, boss.y, 6, 130, 0.7, P.nestEye, 3, true);
+    audio.play('roar', { vol: 0.7 });
+    this.toast(boss.def.name + ' - PHASE ' + (phase + 1), P.nestEye, 2.6);
+    this.bullets.clearHostile(this.r);
+  }
+
+  onPlayerDeath() {
+    if (this.revives > 0) {
+      this.revives--;
+      this.player.dead = false;
+      this.player.hp = this.player.maxHp * 0.5;
+      this.player.invuln = 3;
+      this.bullets.clearHostile(this.r);
+      this.announce('DOC QUILL PATCHES YOU UP', 'ONE CHANCE SPENT', P.uiGood, 3.4);
+      audio.play('rescue');
+      return;
+    }
+    this.state = STATE.DEAD;
+    this.deathT = 0;
+    this.director.onPlayerDeath();
+    audio.setIntensity(0.05);
+  }
+
+  respawnPlayer() {
+    const den = this.world.den;
+    this.player.respawn(den.x, den.y + 24);
+    this.bullets.clearHostile(this.r);
+    // scatter half your carried wood where you fell — a real cost, not a reset
+    const lost = Math.floor(this.player.inv.get('wood') / 2);
+    if (lost > 0) this.player.inv.take('wood', lost);
+    this.state = STATE.PLAY;
+    this.hud.showAnnounce('YOU WAKE IN THE DEN', 'THE STITCHES HOLD', P.ui, 3);
+  }
+
+  onVictory() {
+    this.state = STATE.VICTORY;
+    this.victoryT = 0;
+    audio.play('levelup');
+    audio.setIntensity(0.2);
+  }
+
+  // --- crafting ------------------------------------------------------------
+  nearStation() {
+    const p = this.player;
+    for (const pr of this.world.props) {
+      if (pr.type !== 'station') continue;
+      if (dist2(p.x, p.y, pr.x, pr.y) < 42 * 42) return pr.station;
+    }
+    return null;
+  }
+
+  canCraft(rec) {
+    const p = this.player;
+    if (rec.station && this.nearStation() !== rec.station) return { ok: false, why: 'NEEDS THE ' + rec.station.toUpperCase() };
+    if (!p.inv.hasAll(rec.cost)) return { ok: false, why: 'NOT ENOUGH MATERIALS' };
+    if (rec.give.weapon && p.weapons.includes(rec.give.weapon)) return { ok: false, why: 'ALREADY BUILT' };
+    return { ok: true };
+  }
+
+  craft(rec) {
+    const check = this.canCraft(rec);
+    if (!check.ok) { audio.play('deny'); this.toast(check.why, P.uiWarn); return false; }
+    const p = this.player;
+    p.inv.takeAll(rec.cost);
+    this.craftCounts[rec.id] = (this.craftCounts[rec.id] || 0) + 1;
+
+    if (rec.give.weapon) {
+      p.addWeapon(rec.give.weapon);
+      this.announce(WEAPONS[rec.give.weapon].name, 'BUILT', P.uiGood, 3);
+    }
+    if (rec.give.chipSlot) { p.chipSlots += rec.give.chipSlot; p.recompute(); this.toast('CHIP SOCKET ADDED', P.cyber); }
+    if (rec.give.waterCap) { p.inv.setCap('water', p.inv.cap('water') + rec.give.waterCap); this.toast('WATER CAPACITY UP', P.waterFoam); }
+    for (const k in rec.give) {
+      if (['weapon', 'chipSlot', 'waterCap'].includes(k)) continue;
+      p.grant(k, rec.give[k], this, p.x, p.y - 18);
+    }
+    audio.play('craft');
+    particles.ring(p.x, p.y - 6, 3, 26, 0.4, P.favor, 2, true);
+    return true;
+  }
+
+  // ======================================================================
+  //  RENDER
+  // ======================================================================
+  drawWorldText(str, wx, wy, color, align = 'left', scale = 1) {
+    drawText(this.r.ctx, str, wx - this.r.camera.ox, wy - this.r.camera.oy, color, { align, scale, shadow: true });
+  }
+
+  render() {
+    const r = this.r;
+    const ctx = r.ctx;
+    const cam = r.camera;
+
+    r.beginFrame(P.waterDeep);
+    this.world.drawGround(r);
+    this.drawWaterAndScorch(r);
+    this.wildlife.drawFish(r, cam);
+    particles.draw(r, -1);
+
+    // ground-layer hazards (mortar rings, firebomb markers)
+    for (const h of this.hazards) if (h.layer === 'ground') h.draw(r, this);
+
+    // y-sorted world
+    const list = this.drawList;
+    list.length = 0;
+    this.world.collectDrawables(cam, list);
+    this.wildlife.collect(list, cam);
+    this.pickups.collect(list, cam);
+    for (const e of this.enemies) if (cam.visible(e.x, e.y, 60)) list.push(e);
+    for (const w of this.wrecks) if (cam.visible(w.x, w.y, 40)) list.push(w);
+    for (const n of this.npcs) if (cam.visible(n.x, n.y, 40)) list.push(n);
+    for (const h of this.hazards) if (h.layer === 'entity' && cam.visible(h.x, h.y, 40)) list.push(h);
+    if (!this.player.dead || this.player.deathT < 1.2) list.push(this.player);
+
+    list.sort((a, b) => (a.y || 0) - (b.y || 0));
+    for (const o of list) {
+      if (o === this.player) { this.player.draw(r, this); continue; }
+      if (o.draw) { o.draw(r, this); continue; }
+      this.drawWorldObject(r, o);
+    }
+
+    this.fire.draw(r, this.time);
+    this.bullets.draw(r);
+    this.drawChainArcs(r);
+    this.drawFlyers(r);
+    particles.draw(r, 0);
+    for (const h of this.hazards) if (h.layer === 'over') h.draw(r, this);
+    this.drawSpawnWarnings(r);
+
+    // lighting
+    const amb = this.ambientColor();
+    if (amb) {
+      r.clearLight(amb);
+      this.player.drawLight(r);
+      for (const e of this.enemies) if (cam.visible(e.x, e.y, 60)) e.drawLight(r);
+      this.fire.drawLight(r);
+      for (const g of this.world.geysers) if (cam.visible(g.x, g.y, 60)) r.light(g.x, g.y, 40, 'rgba(140,240,235,0.5)', 0.4);
+      for (const pr of this.world.props) {
+        if (pr.kind === 'forge' && cam.visible(pr.x, pr.y, 60)) r.light(pr.x, pr.y - 6, 60, 'rgba(255,160,80,0.8)', 0.7);
+      }
+    }
+    this.bullets.drawGlow(r);
+    r.endWorld();
+
+    // smoke haze during the fire
+    if (this.fire.intensity > 0.02) {
+      const a = clamp(this.fire.intensity * 0.45, 0, 0.45);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#6b5a4a';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.globalAlpha = 1;
+    }
+
+    particles.drawTexts(r, drawText);
+    this.dialogue.draw(r, this);
+
+    r.vignette(0.42 + this.nightFactor * 0.2);
+    if (this.hitFlash > 0) r.flash('#c0332a', this.hitFlash * 0.4);
+
+    if (this.state === STATE.TITLE) { this.drawTitle(r, ctx); this.input.endFrame(); return; }
+
+    this.hud.draw(r, this);
+    this.panels.draw(r, this);
+
+    if (this.state === STATE.PAUSED) this.drawPause(r, ctx);
+    if (this.state === STATE.DEAD) this.drawDeath(r, ctx);
+    if (this.state === STATE.VICTORY) this.drawVictory(r, ctx);
+
+    if (this.showFps) drawText(ctx, this.loop.fps + ' FPS  ' + this.bullets.count + ' B  ' + this.enemies.length + ' E', 4, VIEW_H - 24, P.uiDim);
+  }
+
+  ambientColor() {
+    const n = this.nightFactor;
+    const fire = this.fire.intensity;
+    if (n < 0.03 && fire < 0.03) return null;      // full daylight: skip the pass
+    const dayR = 255, dayG = 255, dayB = 255;
+    const nightR = 92, nightG = 108, nightB = 150;
+    let rr = lerp(dayR, nightR, n);
+    let gg = lerp(dayG, nightG, n);
+    let bb = lerp(dayB, nightB, n);
+    // fire washes the world orange
+    rr = lerp(rr, 255, fire * 0.5);
+    gg = lerp(gg, 150, fire * 0.45);
+    bb = lerp(bb, 110, fire * 0.5);
+    return `rgb(${Math.round(rr)},${Math.round(gg)},${Math.round(bb)})`;
+  }
+
+  drawWaterAndScorch(r) {
+    const cam = r.camera;
+    const x0 = Math.floor(cam.ox / TS), x1 = Math.ceil((cam.ox + VIEW_W) / TS);
+    const y0 = Math.floor(cam.oy / TS), y1 = Math.ceil((cam.oy + VIEW_H) / TS);
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const id = this.world.tileAt(tx, ty);
+        if (isWater(id)) drawWaterShimmer(r, tx, ty, id, this.time);
+      }
+    }
+  }
+
+  drawWorldObject(r, o) {
+    const img = worldObjectSprite(o, this.time);
+    if (!img) return;
+    let x = o.x - img.width / 2;
+    let y = o.y - img.height + 2;
+    // shake and topple
+    if (o.objType === 'node') {
+      if (o.shake > 0) x += Math.sin(this.time * 60) * o.shake * 6;
+      if (o.fallT > 0) {
+        const t = 1 - o.fallT / 0.6;
+        r.drawT(img, o.x, o.y - img.height / 2, t * 1.5, 1, 1, 1 - t * 0.6);
+        return;
+      }
+      if (o.burning) {
+        r.draw(img, x, y);
+        r.glow(o.x, o.y - img.height * 0.5, 24, 'rgba(255,140,60,0.55)', 0.8);
+        return;
+      }
+      if (o.def && o.def.tall) r.shadow(o.x, o.y, img.width * 0.22, img.width * 0.09, 0.24);
+    }
+    r.draw(img, x, y);
+  }
+
+  drawChainArcs(r) {
+    if (!this.drawArcs || this.drawArcs.length === 0) return;
+    for (let i = this.drawArcs.length - 1; i >= 0; i--) {
+      const a = this.drawArcs[i];
+      a.life -= 1 / 60;
+      if (a.life <= 0) { this.drawArcs.splice(i, 1); continue; }
+      // jagged bolt between the two points
+      const steps = 5;
+      let px = a.x1, py = a.y1;
+      for (let s = 1; s <= steps; s++) {
+        const t = s / steps;
+        const nx = lerp(a.x1, a.x2, t) + rnd(-3, 3);
+        const ny = lerp(a.y1, a.y2, t) + rnd(-3, 3);
+        r.line(px, py, nx, ny, s % 2 ? P.cyberHot : P.cyber, 1, 0.9);
+        px = nx; py = ny;
+      }
+    }
+  }
+
+  drawFlyers(r) {
+    for (const f of this.flyers) {
+      const t = clamp(f.t / f.dur, 0, 1);
+      const x = lerp(f.x0, f.x1, t);
+      const y = lerp(f.y0, f.y1, t) - Math.sin(t * Math.PI) * 22;
+      const icon = itemIcon(f.item);
+      r.drawT(icon, x, y, t * 6, 1, 1, 1);
+      r.glow(x, y, 10, 'rgba(240,192,90,0.5)', 0.6);
+    }
+  }
+
+  /** Arrows at the screen edge pointing at things that matter off-screen. */
+  drawSpawnWarnings(r) {
+    const d = this.director;
+    if (d.phase !== PHASE.PREP || d.timer > 12) return;
+    const frames = warnMarkerFrames();
+    const img = frames[Math.floor(this.time * 8) % frames.length];
+    for (const pt of d.spawnPoints) {
+      const sx = pt.x - r.camera.ox, sy = pt.y - r.camera.oy;
+      const cx = clamp(sx, 10, VIEW_W - 10), cy = clamp(sy, 20, VIEW_H - 30);
+      r.ctx.drawImage(img, Math.round(cx - 8), Math.round(cy - 8));
+    }
+  }
+
+  // --- screens -------------------------------------------------------------
+  drawTitle(r, ctx) {
+    const cx = VIEW_W / 2;
+    r.uiRect(0, 0, VIEW_W, VIEW_H, 'rgba(6,10,8,0.55)');
+    const logo = nestLogoSprite(1.4);
+    ctx.globalAlpha = 0.22;
+    ctx.drawImage(logo, Math.round(cx - logo.width / 2), 26);
+    ctx.globalAlpha = 1;
+
+    drawText(ctx, 'FERRET', cx, 58, P.furCream, { align: 'center', scale: 4, shadow: '#000' });
+    drawText(ctx, 'FIGHTS BACK', cx, 92, P.cyber, { align: 'center', scale: 3, shadow: '#000' });
+    drawText(ctx, 'A YELLOWSTONE SURVIVAL BULLET-HELL', cx, 118, P.uiDim, { align: 'center', shadow: true });
+
+    const lines = [
+      'THEY TOOK YOU AS A KIT. THEY GAVE YOU AN EYE THAT ISN\'T YOURS.',
+      'NOW LES NEST WANTS THE REST OF THE BASIN.',
+    ];
+    lines.forEach((l, i) => drawText(ctx, l, cx, 136 + i * 10, P.uiDim, { align: 'center', shadow: true }));
+
+    const blink = Math.floor(this.titleT * 2) % 2 === 0;
+    if (blink) drawText(ctx, 'PRESS ANY KEY', cx, 172, P.ui, { align: 'center', scale: 2, shadow: '#000' });
+
+    const controls = [
+      'WASD MOVE      MOUSE AIM / FIRE      SHIFT FOCUS-WALK',
+      'E  GATHER / TALK / LOOT      SPACE DASH      Q  SCAN',
+      'R  THROW WATER      F  EAT / PATCH UP      G  SMOKE',
+      'TAB CRAFT      C  CHIPS      M  MAP      ESC PAUSE',
+      'RIGHT MOUSE  OVERCLOCK (BURNS HEALTH FOR POWER)',
+    ];
+    controls.forEach((l, i) => drawText(ctx, l, cx, 200 + i * 9, i === 4 ? P.cyberDim : P.uiDim, { align: 'center', shadow: true }));
+    drawText(ctx, 'SEED ' + this.seed, VIEW_W - 6, VIEW_H - 10, P.uiDim, { align: 'right' });
+  }
+
+  drawPause(r, ctx) {
+    r.uiRect(0, 0, VIEW_W, VIEW_H, 'rgba(6,10,8,0.72)');
+    drawText(ctx, 'PAUSED', VIEW_W / 2, 100, P.ui, { align: 'center', scale: 3, shadow: '#000' });
+    drawText(ctx, 'ESC TO RESUME    M TO MUTE', VIEW_W / 2, 128, P.uiDim, { align: 'center' });
+    const s = this.stats;
+    const rows = [
+      'WAVE REACHED: ' + this.director.wave,
+      'KILLS: ' + s.kills,
+      'CHIPS STOLEN: ' + this.player.chipsStolen,
+      'REQUESTS COMPLETED: ' + s.questsDone,
+      'ANIMALS RESCUED: ' + this.player.animalsRescued,
+      'TREES LOST: ' + s.treesLost,
+    ];
+    rows.forEach((t, i) => drawText(ctx, t, VIEW_W / 2, 150 + i * 10, P.uiDim, { align: 'center' }));
+  }
+
+  drawDeath(r, ctx) {
+    const a = clamp(this.deathT / 1.4, 0, 1);
+    r.uiRect(0, 0, VIEW_W, VIEW_H, `rgba(30,6,6,${0.7 * a})`);
+    drawText(ctx, 'YOU FALL', VIEW_W / 2, 96, P.hpRed, { align: 'center', scale: 3, shadow: '#000' });
+    drawText(ctx, 'THE DEN PULLS YOU BACK IN', VIEW_W / 2, 124, P.uiDim, { align: 'center' });
+    if (this.deathT > 2.5 && Math.floor(this.time * 2) % 2 === 0) {
+      drawText(ctx, 'PRESS ANY KEY TO WAKE UP', VIEW_W / 2, 150, P.ui, { align: 'center', shadow: true });
+    }
+  }
+
+  drawVictory(r, ctx) {
+    const a = clamp(this.victoryT / 1.6, 0, 1);
+    r.uiRect(0, 0, VIEW_W, VIEW_H, `rgba(8,20,14,${0.72 * a})`);
+    drawText(ctx, 'THE NEST IS BROKEN', VIEW_W / 2, 60, P.uiGood, { align: 'center', scale: 3, shadow: '#000' });
+    const s = this.stats;
+    const alive = this.wildlife.animals.length;
+    const rows = [
+      'WAVES HELD: ' + this.director.wave,
+      'MACHINES DESTROYED: ' + s.kills,
+      'CHIPS TORN OUT: ' + this.player.chipsStolen,
+      'ANIMALS CARRIED TO SAFETY: ' + this.player.animalsRescued,
+      'TREES LOST TO THE BURN: ' + s.treesLost,
+      'STILL LIVING IN THE BASIN: ' + alive,
+      'FRIENDS WHO STOOD WITH YOU: ' + this.npcs.filter(n => n.recruited).length,
+    ];
+    rows.forEach((t, i) => drawText(ctx, t, VIEW_W / 2, 96 + i * 11, P.ui, { align: 'center', shadow: true }));
+    if (this.victoryT > 2.5 && Math.floor(this.time * 2) % 2 === 0) {
+      drawText(ctx, 'PRESS ANY KEY - THEY ALWAYS SEND MORE', VIEW_W / 2, 190, P.uiWarn, { align: 'center', shadow: true });
+    }
+  }
+}

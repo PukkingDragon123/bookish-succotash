@@ -1,0 +1,110 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>art check</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#10160f}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import { PLAYER_CFG, NPCS, NPC_ORDER, ANIMALS, HUMANS } from '../src/art/species.js';
+import { critterFrames } from '../src/art/critters.js';
+import { treeFrames, plantFrames, rockSprite, propSprite, TREE_KIND_NAMES, PLANT_KIND_NAMES, ROCK_KIND_NAMES, PROP_NAMES } from '../src/art/flora.js';
+import { machineFrames, MACHINE_NAMES, nestLogoSprite } from '../src/art/machines.js';
+import { itemIcon, ICON_NAMES, weaponSprite, WEAPON_ART_NAMES, bulletSprite, BULLET_ART_NAMES, logSprite, chipPickupFrames } from '../src/art/items.js';
+import { bugFrames, BUG_NAMES, fishFrames } from '../src/art/bugs.js';
+import { drawText } from '../src/engine/font.js';
+
+const SCALE = 3;
+const W = 520, H = 1140;
+const c = document.getElementById('c');
+c.width = W * SCALE; c.height = H * SCALE;
+const ctx = c.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+ctx.scale(SCALE, SCALE);
+ctx.fillStyle = '#1a2418'; ctx.fillRect(0, 0, W, H);
+
+let x = 4, y = 10, rowH = 0;
+function label(t, col = '#8a9483') { drawText(ctx, t, 4, y, col); y += 9; x = 4; rowH = 0; }
+function put(img, cap) {
+  if (!img) return;
+  if (x + img.width + 4 > W) { y += rowH + 10; x = 4; rowH = 0; }
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(x - 1, y - 1, img.width + 2, img.height + 2);
+  ctx.drawImage(img, x, y);
+  if (cap) drawText(ctx, cap, x, y + img.height + 1, '#5d6b57');
+  rowH = Math.max(rowH, img.height + 8);
+  x += img.width + 5;
+}
+function endRow() { y += rowH + 8; x = 4; rowH = 0; }
+
+label('PLAYER  idle / walk / run / attack  (front then back)', '#4de1ff');
+for (const anim of ['idle', 'walk', 'run', 'attack', 'hurt']) {
+  const f = critterFrames('player', PLAYER_CFG, anim, 'front', 8);
+  for (let i = 0; i < 8; i += 2) put(f[i]);
+}
+endRow();
+for (const anim of ['idle', 'walk', 'run']) {
+  const f = critterFrames('player', PLAYER_CFG, anim, 'back', 8);
+  for (let i = 0; i < 8; i += 2) put(f[i]);
+}
+put(logSprite(0), 'log');
+endRow();
+
+label('NPCS', '#f0c05a');
+for (const k of NPC_ORDER) {
+  const f = critterFrames('npc:' + k, NPCS[k].cfg, 'idle', 'front', 8);
+  put(f[0], NPCS[k].name);
+}
+endRow();
+for (const k of NPC_ORDER) {
+  const f = critterFrames('npc:' + k, NPCS[k].cfg, 'walk', 'front', 8);
+  put(f[2]);
+}
+endRow();
+
+label('WILDLIFE', '#7fd48a');
+for (const k of Object.keys(ANIMALS)) {
+  const f = critterFrames('animal:' + k, ANIMALS[k].cfg, 'idle', 'front', 8);
+  put(f[0], ANIMALS[k].name);
+}
+endRow();
+
+label('POACHERS & LES NEST STAFF', '#e0685a');
+for (const k of Object.keys(HUMANS)) {
+  const f = critterFrames('human:' + k, HUMANS[k].cfg, 'idle', 'front', 8);
+  put(f[0], HUMANS[k].name);
+  const g = critterFrames('human:' + k, HUMANS[k].cfg, 'walk', 'front', 8);
+  put(g[2]);
+}
+endRow();
+
+label('MACHINES', '#35b3ab');
+for (const k of MACHINE_NAMES) put(machineFrames(k)[1], k);
+endRow();
+
+label('LES NEST LOGO (nest / cracked egg / dead bird)', '#35b3ab');
+put(nestLogoSprite(1), 'x1'); put(nestLogoSprite(2), 'x2');
+endRow();
+
+label('TREES & PLANTS', '#4f7a41');
+for (const k of TREE_KIND_NAMES) put(treeFrames(k, 1)[0], k);
+endRow();
+for (const k of PLANT_KIND_NAMES) put(plantFrames(k, 2)[0], k);
+endRow();
+label('ROCKS / ORE / PROPS');
+for (const k of ROCK_KIND_NAMES) put(rockSprite(k, 3), k);
+endRow();
+for (const k of PROP_NAMES) put(propSprite(k, 1), k);
+endRow();
+
+label('ITEMS / WEAPONS / BULLETS / BUGS', '#e8d7b0');
+for (const k of ICON_NAMES) put(itemIcon(k), k);
+endRow();
+for (const k of WEAPON_ART_NAMES) put(weaponSprite(k), k);
+endRow();
+for (const k of BULLET_ART_NAMES) put(bulletSprite(k), k);
+put(chipPickupFrames()[2], 'chip');
+endRow();
+for (const k of BUG_NAMES) put(bugFrames(k)[1], k);
+put(fishFrames('trout')[1], 'trout');
+endRow();
+
+window.__done = true;
+document.title = 'art check H=' + Math.ceil(y + 20);
+</script></body></html>

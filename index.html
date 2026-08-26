@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Ferret Fights Back</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%231b2b1e'/><rect x='4' y='6' width='8' height='4' fill='%23e8d7b0'/><rect x='11' y='6' width='2' height='2' fill='%234de1ff'/></svg>" />
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #07090a; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #cfd8c8;
+  }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas#screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #0b1210;
+    display: block;
+    touch-action: none;
+    box-shadow: 0 0 0 1px #1d2a22, 0 12px 60px rgba(0,0,0,.8);
+  }
+  #boot {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: #07090a; z-index: 10; text-align: center; padding: 24px;
+  }
+  #boot h1 { font-size: 22px; letter-spacing: 3px; margin: 0; color: #e8d7b0; }
+  #boot p { font-size: 12px; margin: 0; color: #6f8271; max-width: 460px; line-height: 1.7; }
+  #boot .err { color: #e0685a; white-space: pre-wrap; text-align: left; font-size: 11px; }
+  #boot button {
+    font: inherit; font-size: 13px; letter-spacing: 2px; padding: 12px 28px; cursor: pointer;
+    background: #1f3324; color: #e8d7b0; border: 1px solid #3d5a41; border-radius: 2px;
+  }
+  #boot button:hover { background: #2b4531; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div id="wrap"><canvas id="screen"></canvas></div>
+  <div id="boot">
+    <h1>FERRET FIGHTS BACK</h1>
+    <p id="bootmsg">Generating the basin&hellip;</p>
+    <button id="startbtn" class="hidden">ENTER THE FOREST</button>
+    <p class="err hidden" id="booterr"></p>
+  </div>
+  <script type="module">
+    const msg = document.getElementById('bootmsg');
+    const err = document.getElementById('booterr');
+    window.addEventListener('error', (e) => {
+      err.classList.remove('hidden');
+      err.textContent = (e.error && e.error.stack) || e.message || String(e);
+      msg.textContent = 'Failed to start.';
+    });
+    if (location.protocol === 'file:') {
+      msg.textContent = 'This game uses ES modules and must be served over HTTP.';
+      err.classList.remove('hidden');
+      err.textContent = 'Run:  python3 -m http.server 8080\nThen open:  http://localhost:8080/';
+    } else {
+      import('./src/main.js').then(m => m.boot()).catch(e => {
+        err.classList.remove('hidden');
+        err.textContent = (e && e.stack) || String(e);
+        msg.textContent = 'Failed to start.';
+      });
+    }
+  </script>
+</body>
+</html>
