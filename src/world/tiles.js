@@ -5,6 +5,7 @@
 
 import { P } from '../art/palette.js';
 import { hash2 } from '../engine/rng.js';
+import { TAU } from '../engine/math.js';
 import { shade } from '../art/pixel.js';
 
 export const TS = 16;   // tile size in pixels
@@ -14,6 +15,9 @@ export const T = {
   GRASS: 6, DUFF: 7, MEADOW: 8, MEADOW_DRY: 9, SAGE: 10, ROCK: 11,
   SINTER: 12, MUD: 13, MAT_ORANGE: 14, MAT_OLIVE: 15, SPRING: 16,
   ASH: 17, CHARRED: 18, SNOW: 19, OBSIDIAN: 20, MAT_RUST: 21, SPRING_DEEP: 22,
+  // Les Nest interiors
+  LAB_FLOOR: 23, LAB_DARK: 24, LAB_WALL: 25, LAB_GLASS: 26,
+  LAB_GRATE: 27, LAB_TEAL: 28, LAB_BLOOD: 29, LAB_PAD: 30,
 };
 
 export const TILES = [];
@@ -43,12 +47,31 @@ def(T.CHARRED,    { name: 'burned ground', base: P.charred, light: '#3a322c', da
 def(T.SNOW,       { name: 'snow', base: P.snow, light: '#ffffff', dark: '#b8c4c9', speed: 0.9 });
 def(T.OBSIDIAN,   { name: 'obsidian flow', base: P.obsidian, light: P.obsidianHi, dark: '#0b0b12', speed: 0.95 });
 
+// --- laboratory ------------------------------------------------------------
+def(T.LAB_FLOOR, { name: 'lab floor', base: '#3f4a4c', light: '#4e5a5c', dark: '#2f383a', indoor: true });
+def(T.LAB_DARK,  { name: 'service floor', base: '#2c3436', light: '#3a4446', dark: '#20272a', indoor: true });
+def(T.LAB_WALL,  { name: 'wall', base: '#59666a', light: '#6f7d81', dark: '#39454a', solid: true, indoor: true });
+def(T.LAB_GLASS, { name: 'containment glass', base: '#5f8f96', light: '#a9dbe0', dark: '#3d666d', solid: true, glass: true, indoor: true });
+def(T.LAB_GRATE, { name: 'grate', base: '#333c3e', light: '#49555a', dark: '#232b2d', indoor: true });
+def(T.LAB_TEAL,  { name: 'company floor', base: '#17403e', light: '#22605c', dark: '#0f2c2b', indoor: true });
+// Same floor as anywhere else in the block. The blood is painted on top, not
+// baked into the panel grid, or every tile edge comes out as a red line.
+def(T.LAB_BLOOD, { name: 'floor', base: '#3f4a4c', light: '#4e5a5c', dark: '#2f383a', indoor: true, bloody: true });
+def(T.LAB_PAD,   { name: 'helipad', base: '#37403f', light: '#c9a23c', dark: '#232a2a', indoor: true });
+
 export const isWater = (t) => TILES[t].water;
 export const isSolid = (t) => TILES[t].solid;
 export const tileSpeed = (t) => TILES[t].speed;
 export const isHot = (t) => !!TILES[t].hot;
 export const tileDamage = (t) => TILES[t].damage || 0;
 export const isFlammable = (t) => TILES[t].burn >= 0;
+
+// Ordered dither matrix, and how much of the neighbour survives at each step
+// inward. Four pixels of bleed is enough to break the grid without smearing
+// the terrain into mush.
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const BLEED = 4;
+const BLEED_T = [13, 9, 5, 2];
 
 /**
  * Paint one tile into a chunk buffer.
@@ -211,22 +234,139 @@ export function drawTile(ctx, px, py, id, tx, ty, nb) {
       }
       break;
     }
+    case T.LAB_FLOOR:
+    case T.LAB_DARK:
+    case T.LAB_TEAL:
+    case T.LAB_BLOOD: {
+      // clean panel grid, scuffed
+      ctx.fillStyle = t.dark;
+      ctx.fillRect(px, py + TS - 1, TS, 1);
+      ctx.fillRect(px + TS - 1, py, 1, TS);
+      ctx.fillStyle = t.light;
+      ctx.fillRect(px, py, TS - 1, 1);
+      for (let i = 0; i < 3; i++) {
+        const x = px + Math.floor(hash2(tx * 7 + i, ty * 13, 40) * (TS - 3));
+        const y = py + Math.floor(hash2(tx * 3, ty * 11 + i, 41) * (TS - 2));
+        ctx.fillStyle = h(i) > 0.6 ? t.light : t.dark;
+        ctx.fillRect(x, y, 2, 1);
+      }
+      if (id === T.LAB_BLOOD) {
+        // A pool with a dark heart and a spattered edge, deterministic so it
+        // never crawls between frames. Blobs, not scanlines.
+        const cx = px + 3 + Math.floor(hash2(tx, ty, 44) * 9);
+        const cy = py + 3 + Math.floor(hash2(tx, ty, 45) * 9);
+        const rr = 3 + hash2(tx, ty, 46) * 3.4;
+        for (let y = -5; y <= 5; y++) {
+          for (let x = -5; x <= 5; x++) {
+            const gx = cx + x, gy = cy + y;
+            if (gx < px || gy < py || gx >= px + TS || gy >= py + TS) continue;
+            // squashed circle, edge chewed up by a hash so it is not a disc
+            const d = Math.hypot(x, y * 1.25) - hash2(gx, gy, 47) * 1.6;
+            if (d > rr) continue;
+            ctx.fillStyle = d < rr * 0.45 ? '#4a1414' : d < rr * 0.78 ? '#5c1a1a' : '#7a2323';
+            ctx.fillRect(gx, gy, 1, 1);
+          }
+        }
+        // thrown droplets, further out and smaller
+        for (let i = 0; i < 9; i++) {
+          const a = hash2(tx * 5 + i, ty, 42) * TAU;
+          const r2 = rr + 1 + hash2(tx, ty * 5 + i, 43) * 6;
+          const gx = Math.round(cx + Math.cos(a) * r2);
+          const gy = Math.round(cy + Math.sin(a) * r2 * 0.8);
+          if (gx < px || gy < py || gx >= px + TS || gy >= py + TS) continue;
+          ctx.fillStyle = i % 3 === 0 ? '#8e2a2a' : '#5c1a1a';
+          ctx.fillRect(gx, gy, 1, 1 + (i % 2 && r2 < rr + 3 ? 1 : 0));
+        }
+      }
+      break;
+    }
+    case T.LAB_WALL: {
+      ctx.fillStyle = t.light;
+      ctx.fillRect(px, py, TS, 2);
+      ctx.fillStyle = t.dark;
+      ctx.fillRect(px, py + TS - 3, TS, 3);
+      for (let i = 0; i < 2; i++) {
+        const x = px + 2 + i * 7;
+        ctx.fillStyle = t.dark;
+        ctx.fillRect(x, py + 4, 1, TS - 8);
+      }
+      break;
+    }
+    case T.LAB_GLASS: {
+      ctx.fillStyle = t.dark;
+      ctx.fillRect(px, py, TS, TS);
+      ctx.fillStyle = t.base;
+      ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2);
+      ctx.fillStyle = t.light;
+      // a couple of specular streaks so it reads as glass, not water
+      ctx.fillRect(px + 3, py + 2, 1, TS - 5);
+      ctx.fillRect(px + 4, py + 2, 1, 4);
+      ctx.fillRect(px + 9, py + 6, 1, TS - 9);
+      break;
+    }
+    case T.LAB_GRATE: {
+      ctx.fillStyle = t.dark;
+      ctx.fillRect(px, py, TS, TS);
+      ctx.fillStyle = t.light;
+      for (let i = 1; i < TS; i += 3) ctx.fillRect(px, py + i, TS, 1);
+      ctx.fillStyle = t.base;
+      for (let i = 0; i < TS; i += 5) ctx.fillRect(px + i, py, 1, TS);
+      break;
+    }
+    case T.LAB_PAD: {
+      ctx.fillStyle = t.dark;
+      ctx.fillRect(px, py, TS, TS);
+      ctx.fillStyle = t.base;
+      ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2);
+      // hazard chevrons
+      ctx.fillStyle = t.light;
+      for (let i = 0; i < TS; i += 4) ctx.fillRect(px + ((i + tx * 3) % TS), py + i, 2, 1);
+      break;
+    }
     default: break;
   }
 
-  // --- edge blending: dither the neighbour's colour into the shared border
-  if (nb) {
-    const edges = [[0, -1, 0, 0, TS, 1], [0, 1, 0, TS - 1, TS, 1], [-1, 0, 0, 0, 1, TS], [1, 0, TS - 1, 0, 1, TS]];
-    for (const [dx, dy, ex, ey, ew, eh] of edges) {
+  // --- edge blending ------------------------------------------------------
+  // A single dithered pixel row still reads as a hard grid line when two
+  // greens meet. Instead the neighbour bleeds four pixels in, thinning out
+  // with an ordered dither, and the diagonals get a corner patch so the
+  // intersections don't stay square either.
+  if (nb && !t.indoor) {
+    const edges = [
+      [0, -1, 0, 0, 1, 0],       // dx, dy, x0, y0, along-x?, — top
+      [0, 1, 0, TS - 1, 1, 0],   // bottom
+      [-1, 0, 0, 0, 0, 1],       // left
+      [1, 0, TS - 1, 0, 0, 1],   // right
+    ];
+    for (const [dx, dy, ex, ey, ax, ay] of edges) {
       const other = nb(dx, dy);
       if (other === id || other == null) continue;
       const ot = TILES[other];
       if (!ot || ot.solid || ot.water !== t.water) continue;
       ctx.fillStyle = ot.base;
-      for (let y = 0; y < eh; y++) {
-        for (let x = 0; x < ew; x++) {
-          const gx = px + ex + x, gy = py + ey + y;
-          if (((gx + gy) & 1) === 0) ctx.fillRect(gx, gy, 1, 1);
+      const inx = -dx, iny = -dy;
+      for (let d = 0; d < BLEED; d++) {
+        for (let k = 0; k < TS; k++) {
+          const gx = px + ex + ax * k + (dx ? inx * d : 0);
+          const gy = py + ey + ay * k + (dy ? iny * d : 0);
+          const j = BAYER[(gy & 3) * 4 + (gx & 3)] + hash2(gx, gy, 91) * 7 - 3.5;
+          if (j < BLEED_T[d]) ctx.fillRect(gx, gy, 1, 1);
+        }
+      }
+    }
+    // corners, so two different neighbours meeting at a diagonal blend too
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const other = nb(dx, dy);
+      if (other === id || other == null) continue;
+      const ot = TILES[other];
+      if (!ot || ot.solid || ot.water !== t.water) continue;
+      ctx.fillStyle = ot.base;
+      const cx = dx < 0 ? 0 : TS - 3, cy = dy < 0 ? 0 : TS - 3;
+      for (let y = 0; y < 3; y++) {
+        for (let x = 0; x < 3; x++) {
+          const gx = px + cx + x, gy = py + cy + y;
+          const j = BAYER[(gy & 3) * 4 + (gx & 3)] + hash2(gx, gy, 92) * 7 - 3.5;
+          if (j < 6) ctx.fillRect(gx, gy, 1, 1);
         }
       }
     }

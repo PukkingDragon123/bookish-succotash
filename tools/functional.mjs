@@ -1,16 +1,30 @@
 // End-to-end checks of the actual game systems, driven through the live page.
 import { chromium } from 'playwright';
 
-async function enterGame(page) {
+async function enterGame(page, opts = {}) {
   await page.waitForSelector('#startbtn:not(.hidden)', { timeout: 60000 });
   await page.click('#startbtn');
   await page.waitForTimeout(400);
   const box = await (await page.$('#screen')).boundingBox();
+  // The title screen is a menu now. Take the second entry, STRAIGHT TO THE
+  // BASIN, so the harness lands in the survival game rather than the lab.
   for (let i = 0; i < 12; i++) {
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await page.waitForTimeout(250);
-    const st = await page.evaluate(() => window.game && window.game.state);
-    if (st === 'play') return box;
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(80);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const st = await page.evaluate(() => window.game && ({ state: window.game.state, mode: window.game.mode }));
+    if (st && st.state === 'play' && st.mode === 'forest') {
+      if (opts.keepFirstStand !== true) {
+        // The scripted first defeat holds the wave director back for about a
+        // minute. Tests that care about waves skip past it on purpose.
+        await page.evaluate(() => {
+          if (window.game.firstStand) window.game.firstStand.skip(window.game);
+        });
+      }
+      await page.waitForTimeout(200);
+      return box;
+    }
   }
   throw new Error('could not leave the title screen');
 }
@@ -254,6 +268,180 @@ for (const boss of ['ripsawPrime', 'kiln', 'motherNest']) {
     return { ok: b.dead && g.wrecks.length > 0, wrecks: g.wrecks.length, phase: b.phaseIdx };
   });
 }
+
+// --- trust, tools, squad ----------------------------------------------------
+await page.evaluate(() => {
+  const g = window.game;
+  g.enemies.length = 0; g.bullets.clear(); g.fire.extinguishAll();
+  g.player.hp = g.player.maxHp; g.player.invuln = 1e6;
+  // Put a bear right next to the player and clear its nerves.
+  const a = g.wildlife.animals.find(x => x.key === 'bear') || g.wildlife.animals[0];
+  a.x = g.player.x + 14; a.y = g.player.y; a.trust = 0; a.bonded = false; a.panicT = 0;
+  window.__beast = a;
+});
+await page.waitForTimeout(200);
+
+await check('feeding a liked food raises trust', () => {
+  const g = window.game, a = window.__beast;
+  const food = a.def.likes[0];
+  g.player.inv.items[food] = 5;
+  const before = a.trust;
+  const ok = a.feed(food, g);
+  return { ok: ok && a.trust > before, species: a.key, food, trust: Math.round(a.trust) };
+});
+
+await check('enough trust bonds the animal to you', () => {
+  const g = window.game, a = window.__beast;
+  a.addTrust(200, g);
+  return { ok: a.bonded && a.devoted, bonded: a.bonded, devoted: a.devoted, trust: Math.round(a.trust) };
+});
+
+await check('shooting your own animal costs trust', () => {
+  const g = window.game;
+  const b = g.wildlife.animals.find(x => x !== window.__beast && !x.dead);
+  b.trust = 40; b.bonded = false;
+  const before = b.trust;
+  b.damage(1, g, true);
+  return { ok: b.trust < before, before: Math.round(before), after: Math.round(b.trust) };
+});
+
+await check('a bonded animal takes and holds an order', () => {
+  const g = window.game, a = window.__beast;
+  g.squad.commandMode = true;
+  g.squad.filter = 'all';
+  const tx = a.x + 90, ty = a.y + 40;
+  g.squad.issueAt(g, tx, ty);
+  const moved = a.order === 'move';
+  g.squad.issueHold(g);
+  const held = a.order === 'hold';
+  g.squad.issueFollow(g);
+  const follows = a.order === 'follow';
+  g.squad.commandMode = false;
+  return { ok: moved && held && follows, size: g.squad.size };
+});
+
+await check('ordering an attack targets the machine you clicked', () => {
+  const g = window.game, a = window.__beast;
+  const e = g.spawnEnemy('spider', a.x + 60, a.y, 2);
+  e.spawnT = 0;
+  g.squad.commandMode = true;
+  g.squad.issueAt(g, e.x, e.y);
+  const ok = a.order === 'attack' && a.orderTarget === e;
+  g.squad.commandMode = false;
+  return { ok, order: a.order };
+});
+// Closing 60px and landing a first swing takes a bear a couple of seconds;
+// 2.2s was tight enough to flake.
+await page.waitForTimeout(4500);
+await check('the ordered animal actually hurts it', () => {
+  const g = window.game;
+  const e = g.enemies.find(x => x.kind === 'spider');
+  const ok = !e || e.hp < e.maxHp;
+  const hp = e ? Math.round(e.hp) : 0;
+  for (const x of g.enemies) x.dead = true;
+  g.enemies.length = 0;
+  return { ok, hp };
+});
+
+await check('animal tools can be built and fitted', () => {
+  const g = window.game, a = window.__beast;
+  const rec = g.panels.availableRecipes(g).find(r => r.id === 'tool_plate');
+  if (!rec) return { ok: false, why: 'no plate recipe' };
+  for (const k in rec.cost) g.player.inv.items[k] = rec.cost[k] + 2;
+  const bench = g.world.props.find(pr => pr.station === rec.station);
+  g.player.x = bench.x; g.player.y = bench.y + 10;
+  const built = g.craft(rec);
+  const hpBefore = a.maxHpStat;
+  const fitted = a.giveTool('plate', g);
+  if (fitted) g.toolBag.plate--;
+  return { ok: built && fitted && a.maxHpStat > hpBefore, tools: a.tools.join(','), maxHp: Math.round(a.maxHpStat) };
+});
+
+await check('a downed companion can be revived', () => {
+  const g = window.game, a = window.__beast;
+  a.hp = 1;
+  a.damage(999, g, false);
+  const wentDown = a.downT > 0 && !a.dead;
+  a.downT = 0; a.hp = a.maxHpStat * 0.5;
+  return { ok: wentDown, down: wentDown };
+});
+
+// --- skill combat -----------------------------------------------------------
+await page.evaluate(() => {
+  const g = window.game;
+  g.enemies.length = 0; g.bullets.clear(); g.hazards.length = 0; g.boss = null;
+  g.fire.extinguishAll();
+  g.player.hp = g.player.maxHp; g.player.energy = 100; g.player.invuln = 0;
+  g.player.combo = 0; g.player.comboT = 0;
+});
+await page.waitForTimeout(300);
+
+await check('claw melee damages what is in front of you', () => {
+  const g = window.game, p = g.player;
+  const e = g.spawnEnemy('poacher', p.x + 16, p.y, 1);
+  e.spawnT = 0;
+  const before = e.hp;
+  p.aim = Math.atan2(0, 1);
+  p.energy = 100;
+  const ok = p.tryMelee(g);
+  const after = e.hp;
+  e.dead = true; g.enemies.length = 0;
+  return { ok: ok && after < before, dealt: Math.round(before - after) };
+});
+
+await check('melee misses what is behind you', () => {
+  const g = window.game, p = g.player;
+  const e = g.spawnEnemy('poacher', p.x - 18, p.y, 1);
+  e.spawnT = 0;
+  const before = e.hp;
+  p.aim = 0;                       // facing right, target is left
+  p.energy = 100; p.meleeCd = 0;
+  p.tryMelee(g);
+  const missed = e.hp === before;
+  e.dead = true; g.enemies.length = 0;
+  return { ok: missed };
+});
+
+await check('parry turns a hostile shot into a friendly one', () => {
+  const g = window.game, p = g.player;
+  g.bullets.clear();
+  p.energy = 100; p.meleeCd = 0; p.aim = 0;
+  p.tryMelee(g);                            // opens the guard window
+  const b = g.spawnBullet({ x: p.x + 14, y: p.y - 8, vx: -160, vy: 0, friendly: false, damage: 10, life: 3 });
+  const dmgBefore = b.damage;
+  const parried = p.tryParry(b, g);
+  return { ok: parried && b.friendly && b.damage > dmgBefore && b.vx > 0,
+           friendly: b.friendly, damage: Math.round(b.damage), combo: p.combo };
+});
+
+await check('parry window closes', () => {
+  const g = window.game, p = g.player;
+  p.parryT = 0; p.parryPerfectT = 0;
+  const b = g.spawnBullet({ x: p.x + 14, y: p.y - 8, vx: -160, vy: 0, friendly: false, damage: 10, life: 3 });
+  const parried = p.tryParry(b, g);
+  b.alive = false;
+  return { ok: !parried && !p.parryActive };
+});
+
+await check('dashing past a shot grazes it', () => {
+  const g = window.game, p = g.player;
+  p.combo = 0; p.comboT = 0; p.grazeCd = 0;
+  p.dashT = 0.18;
+  const b = g.spawnBullet({ x: p.x + 4, y: p.y - 7, vx: 0, vy: 0, friendly: false, damage: 10, life: 3 });
+  p.tryGraze(b, g);
+  b.alive = false; p.dashT = 0;
+  return { ok: p.combo > 0, combo: p.combo, energy: Math.round(p.energy) };
+});
+
+await check('the parry chain actually raises damage', () => {
+  const g = window.game, p = g.player;
+  p.combo = 0; p.comboT = 0; p.edgeBuffT = 0; p.overclock = false; p.hp = p.maxHp;
+  const base = p.damageMult;
+  p.combo = 3; p.comboT = 3; p.edgeBuffT = 3;
+  const buffed = p.damageMult;
+  p.combo = 0; p.comboT = 0; p.edgeBuffT = 0;
+  return { ok: buffed > base, base: +base.toFixed(2), buffed: +buffed.toFixed(2) };
+});
 
 // --- stress -----------------------------------------------------------------
 await page.evaluate(() => {

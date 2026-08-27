@@ -4,6 +4,7 @@
 
 import { Renderer, VIEW_W, VIEW_H } from './engine/canvas.js';
 import { Input } from './engine/input.js';
+import { toggleFullscreen } from './engine/touch.js';
 import { Loop } from './engine/loop.js';
 import { audio } from './engine/audio.js';
 import { particles } from './engine/particles.js';
@@ -33,15 +34,36 @@ import { Dialogue } from './ui/dialogue.js';
 
 import { RESOURCES, WEAPONS, CHIPS, randomChipKey } from './systems/defs.js';
 import { Director, PHASE } from './systems/waves.js';
+import { Squad } from './systems/squad.js';
+import { TOOLS, TOOL_KEYS } from './systems/tools.js';
+import { TRUST_BOND } from './entities/wildlife.js';
+import { Campaign, CHAPTER } from './story/campaign.js';
+import { LAB_W, LAB_H } from './world/lab.js';
+import { FirstStand } from './story/firststand.js';
 
 export const STATE = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead', VICTORY: 'victory' };
+
+// The basin. Big enough that you can get properly lost in it and the far side
+// is a journey rather than a stroll.
+export const FOREST_W = 340, FOREST_H = 280;
 
 export class Game {
   constructor(canvas, seed) {
     this.seed = seed >>> 0;
     this.r = new Renderer(canvas);
     this.input = new Input(canvas);
+    // A rotated iPad changes the internal resolution, so anything that caches
+    // a screen-space layout has to be told.
+    this.r.onResize = () => {
+      this.input.touch.onViewportChange();
+      if (this.panels) this.panels.mapDirty = true;
+    };
     this.state = STATE.TITLE;
+    this.mode = 'forest';            // 'lab' while the campaign is running
+    this.campaign = null;
+    this.firstStand = null;
+    this.standDelay = 0;
+    this.storyDone = false;
     this.time = 0;
     this.dayTime = 0.28;             // 0..1 through the day; starts mid-morning
     this.nightFactor = 0;
@@ -56,11 +78,22 @@ export class Game {
     this.smokeBombCharges = 0;
     this.geyserControl = false;
     this.craftCounts = {};
+    this.toolBag = {};              // animal kit built but not yet fitted
     this.rescued = 0;
     this.rescueTarget = 0;
     this.stats = { treesLost: 0, treesSaved: 0, animalsLost: 0, kills: 0, questsDone: 0 };
     this.flyers = [];
+    this.slashes = [];
     this.titleT = 0;
+    this.pound = { phase: 'pace', t: 0, cracks: 0, flash: 0 };
+    this.menu = {
+      sel: 0,
+      rects: [],
+      items: [
+        { id: 'story', label: 'BEGIN', sub: 'DAY 612. BLOCK C. THE STORY.' },
+        { id: 'skip', label: 'STRAIGHT TO THE BASIN', sub: 'SKIP THE FACILITY. START THE SIEGE.' },
+      ],
+    };
     this.deathT = 0;
     this.victoryT = 0;
 
@@ -69,30 +102,106 @@ export class Game {
     this.loop = new Loop((dt) => this.update(dt), () => this.render());
   }
 
+  /**
+   * Boot straight into the facility. The title screen is your own tank seen
+   * from the outside, so the game opens on the thing the story is about.
+   * The basin itself is not generated until the campaign hands over.
+   */
   build() {
-    this.world = new World(this.seed, 200, 160);
+    this.world = new World(this.seed, LAB_W, LAB_H, { blank: true });
     this.fire = new FireSim(this.world);
-    this.player = new Player(this.world.den.x, this.world.den.y + 26);
+    this.player = new Player(0, 0);
     this.bullets = new Bullets();
     this.pickups = new PickupManager();
     this.enemies = [];
     this.wrecks = [];
     this.hazards = [];
-    this.npcs = spawnNPCs(this.world, this.seed);
+    this.npcs = [];
     this.wildlife = new Wildlife(this.world, this.seed);
     this.director = new Director(this.seed);
+    this.squad = new Squad();
     this.hud = new Hud();
     this.panels = new Panels();
     this.dialogue = new Dialogue();
     this.drawList = [];
 
+    this.mode = 'lab';
+    this.campaign = new Campaign(this);
+    this.campaign.prepareTitle();
+  }
+
+  /**
+   * Generate the basin and move in. Called when the campaign ends (or when it
+   * is skipped) — never before, because a 340x280 basin is not free.
+   */
+  buildForest() {
+    this.mode = 'forest';
+    this.campaign = null;
+    this.storyDone = true;
+
+    this.world = new World(this.seed, FOREST_W, FOREST_H);
+    this.fire = new FireSim(this.world);
+    this.npcs = spawnNPCs(this.world, this.seed);
+    this.wildlife = new Wildlife(this.world, this.seed);
+    this.director = new Director(this.seed);
+    this.enemies.length = 0;
+    this.wrecks.length = 0;
+    this.hazards.length = 0;
+    this.pickups.clear();
+    this.bullets.clear();
+    this.squad = new Squad();
+    this.panels.mapDirty = true;
+
+    this.player.respawn(this.world.den.x, this.world.den.y + 26);
+    this.player.weapons = ['popper'];
+    this.player.weaponIndex = 0;
+    this.player.speedMult = 1;
+
     this.r.camera.bounds = { minX: 0, minY: 0, maxX: this.world.pxW, maxY: this.world.pxH };
-    this.r.camera.x = this.player.x;
-    this.r.camera.y = this.player.y;
+    this.r.camera.x = this.r.camera.tx = this.player.x;
+    this.r.camera.y = this.r.camera.ty = this.player.y;
 
     // A starting kit so wave 1 is survivable while you learn the controls.
     this.player.inv.add('ammo', 30);
     this.player.inv.add('berries', 3);
+  }
+
+  /** Begin the story. The lab is already loaded from build(). */
+  startStory() {
+    this.mode = 'lab';
+    if (!this.campaign) this.campaign = new Campaign(this);
+    this.campaign.begin();
+    this.state = STATE.PLAY;
+  }
+
+  /**
+   * The transport goes down in the basin. Everything the campaign built is
+   * thrown away and the survival game starts for real.
+   */
+  onCampaignComplete(skipped = false) {
+    this.buildForest();
+    this.state = STATE.PLAY;
+    if (skipped) {
+      this.hud.showAnnounce('DEFEND THE BASIN', 'THEY COME IN WAVES', P.ui, 4);
+    } else {
+      // You arrive the way the helicopter left you.
+      this.player.hp = Math.max(12, Math.round(this.player.maxHp * 0.35));
+      this.hitFlash = 1;
+      this.r.camera.addShake(14);
+      audio.play('bigexplode');
+      particles.burst(this.player.x, this.player.y, 40, {
+        colors: [P.fire1, P.fire2, '#3a3a3a'], speed: 200, life: 1.2, vz: 160, gravity: 320, bounce: 0.3,
+      });
+      particles.smoke(this.player.x, this.player.y - 6, 24, { life: 2.4, size: 4 });
+      this.hud.showAnnounce('THE BASIN', 'YOU ARE OUT. NOW STAY OUT.', P.uiGood, 4.5);
+      this.toast('WASD MOVE  -  MOUSE AIM/FIRE  -  E GATHER  -  TAB CRAFT', P.uiDim, 10);
+    }
+    audio.setIntensity(0.2);
+
+    // The first fight is scripted, and you lose it. Give the player long enough
+    // to find their feet and see the basin first.
+    this.firstStand = new FirstStand();
+    this.standDelay = skipped ? 26 : 16;
   }
 
   start() {
@@ -144,13 +253,42 @@ export class Game {
     this.dialogue.update(sdt);
     this.hud.update(dt);
 
-    this.world.update(sdt);
-    this.fire.update(sdt, this);
-    this.director.update(sdt, this);
+    const lab = this.mode === 'lab';
 
-    this.player.update(sdt, this);
-    this.updateInteraction();
-    this.handleAbilityKeys();
+    const stand = this.firstStand;
+    const standing = !!(stand && stand.active);
+
+    this.world.update(sdt);
+    if (!lab) {
+      this.fire.update(sdt, this);
+      // The director waits its turn: no waves until the first fight is done.
+      if (stand && !stand.finished) {
+        if (!standing) {
+          this.standDelay -= sdt;
+          if (this.standDelay <= 0) stand.begin(this);
+        } else {
+          stand.update(sdt, this);
+        }
+      } else {
+        this.director.update(sdt, this);
+      }
+    } else {
+      this.campaign.update(sdt, this);
+      // The last chapter tears the lab down and builds the basin. Everything
+      // below this point is holding stale references, so stop the frame here.
+      if (this.mode !== 'lab') { this.input.endFrame(); return; }
+    }
+
+    // During a cutscene the script owns the ferret.
+    const scripted = (lab && this.campaign.blockPlayer) ||
+      (standing && stand.cut && stand.cut.prompt == null && stand.phase !== 'fight');
+    this.player.update(sdt, this, scripted);
+    if (!lab) {
+      this.updateInteraction();
+      this.handleAbilityKeys();
+    } else {
+      this.prompt = null;
+    }
 
     this.bullets.update(sdt, this);
 
@@ -169,40 +307,147 @@ export class Game {
       h.update(sdt, this);
       if (h.dead) this.hazards.splice(i, 1);
     }
-    for (const n of this.npcs) n.update(sdt, this);
-    this.wildlife.update(sdt, this);
+    if (!lab) {
+      for (const n of this.npcs) n.update(sdt, this);
+      this.wildlife.update(sdt, this);
+      this.squad.update(sdt, this);
+    }
     this.pickups.update(sdt, this);
     this.updateFlyers(sdt);
+    this.updateSlashes(sdt);
     this.updateGeysers(sdt);
     particles.update(sdt);
 
     // camera leads slightly toward the cursor: you see what you aim at
-    const mw = this.r.camera.toWorld(this.input.mouse.sx, this.input.mouse.sy);
-    const lx = clamp((mw.x - this.player.x) * 0.22, -54, 54);
-    const ly = clamp((mw.y - this.player.y) * 0.22, -40, 40);
-    this.r.camera.follow(this.player.x + lx, this.player.y - 6 + ly);
+    if ((!lab || !this.campaign.ownsCamera) && !(standing && stand.phase !== 'fight')) {
+      const mw = this.r.camera.toWorld(this.input.mouse.sx, this.input.mouse.sy);
+      const lx = clamp((mw.x - this.player.x) * 0.22, -54, 54);
+      const ly = clamp((mw.y - this.player.y) * 0.22, -40, 40);
+      this.r.camera.follow(this.player.x + lx, this.player.y - 6 + ly);
+    }
     this.r.camera.update(dt);
 
+    this.input.touch.uiMode = this.panels.open || this.state !== STATE.PLAY;
+    this.input.touch.setToggle('overclock', this.player.overclock);
+    this.updateTouchButtons(lab);
     this.updateAudioMood(dt);
     this.input.endFrame();
+  }
+
+  /**
+   * The menu. You are still in the tank, and you are still hitting the glass.
+   * Every four seconds the ferret throws itself at the pane; the glass cracks
+   * a little more and never quite gives, which is the whole game in one loop.
+   */
+  /** Hide the thumb buttons that would do nothing where you are standing. */
+  updateTouchButtons(lab) {
+    const hide = [];
+    if (!this.smokeBombCharges && !this.geyserControl) hide.push('smoke');
+    if (lab) {
+      // Nothing to craft, nobody to command, and no gun until you take one.
+      hide.push('scan', 'douse', 'use', 'craft', 'chips', 'map', 'command', 'rally');
+      if (!this.campaign.hasGun) hide.push('weapon');
+    } else if (this.squad.size === 0) {
+      hide.push('command', 'rally');
+    }
+    this.input.touch.setHidden(hide);
   }
 
   updateTitle(dt) {
     this.titleT += dt;
     this.time += dt;
     particles.update(dt);
-    this.r.camera.follow(this.world.den.x + Math.cos(this.titleT * 0.08) * 90, this.world.den.y + Math.sin(this.titleT * 0.06) * 60);
-    this.r.camera.update(dt);
     this.world.update(dt * 0.5);
-    this.wildlife.update(dt, this);
-    if (this.input.anyKeyPressed || this.input.mouse.pressed) {
+    this.r.camera.update(dt);
+    this.input.touch.uiMode = true;
+    this.updateCagePound(dt);
+    for (const a of this.campaign.actors) a.update(dt);
+
+    const i = this.input;
+    const n = this.menu.items.length;
+    if (i.isPressed('up') || i.wheel < 0) { this.menu.sel = (this.menu.sel + n - 1) % n; audio.play('ui'); }
+    if (i.isPressed('down') || i.wheel > 0) { this.menu.sel = (this.menu.sel + 1) % n; audio.play('ui'); }
+    i.wheel = 0;
+
+    // Pointer/touch: hover highlights, tap selects.
+    const hit = (x, y) => {
+      for (let k = 0; k < n; k++) {
+        const b = this.menu.rects[k];
+        if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return k;
+      }
+      return -1;
+    };
+    const hov = hit(i.mouse.sx, i.mouse.sy);
+    if (hov >= 0 && hov !== this.menu.sel && !i.usingTouch) { this.menu.sel = hov; audio.play('ui'); }
+
+    let chosen = -1;
+    const tap = i.takeTap();
+    if (tap) { const k = hit(tap.x, tap.y); if (k >= 0) chosen = k; }
+    if (i.isPressed('interact') || i.isPressed('dash') || i.keyPressed('Enter') || i.keyPressed('NumpadEnter')) {
+      chosen = this.menu.sel;
+    }
+
+    if (chosen >= 0) {
       audio.resume();
-      audio.play('levelup');
-      this.state = STATE.PLAY;
-      this.hud.showAnnounce('DEFEND THE BASIN', 'THEY COME IN WAVES', P.ui, 4);
-      this.toast('WASD MOVE  -  MOUSE AIM/FIRE  -  E INTERACT/GATHER  -  TAB CRAFT', P.uiDim, 9);
+      audio.play('uiselect');
+      this.menu.sel = chosen;
+      if (this.menu.items[chosen].id === 'story') {
+        audio.play('levelup');
+        this.startStory();
+      } else {
+        this.onCampaignComplete(true);
+        this.toast(this.input.touch.visible
+          ? 'LEFT THUMB MOVES  -  RIGHT THUMB AIMS AND FIRES  -  E GATHERS'
+          : 'WASD MOVE  -  MOUSE AIM/FIRE  -  E INTERACT/GATHER  -  TAB CRAFT', P.uiDim, 9);
+      }
     }
     this.input.endFrame();
+  }
+
+  /** Paces, winds up, hits the pane, recoils, paces again. */
+  updateCagePound(dt) {
+    const c = this.campaign.marks.cage;
+    const paneX = (c.tx + 3) * TS;
+    const p = this.player;
+    const s = this.pound;
+    s.t += dt;
+
+    if (s.phase === 'pace') {
+      const sway = Math.sin(s.t * 1.5);
+      p.x = c.x - 6 + sway * 12;
+      p.y = c.y + 8 + Math.cos(s.t * 2.1) * 4;
+      p.anim = Math.abs(sway) > 0.2 ? 'walk' : 'idle';
+      p.facing = Math.cos(s.t * 1.5) > 0 ? 1 : -1;
+      p.view = 'front';
+      if (s.t > 2.6) { s.phase = 'wind'; s.t = 0; p.facing = 1; }
+    } else if (s.phase === 'wind') {
+      p.x += (c.x - 12 - p.x) * Math.min(1, dt * 7);
+      p.anim = 'idle';
+      p.facing = 1;
+      if (s.t > 0.45) { s.phase = 'lunge'; s.t = 0; audio.play('dash', { vol: 0.35 }); }
+    } else if (s.phase === 'lunge') {
+      p.x += (paneX - 10 - p.x) * Math.min(1, dt * 22);
+      p.anim = 'run';
+      if (s.t > 0.16) {
+        s.phase = 'hit'; s.t = 0;
+        s.cracks = Math.min(6, s.cracks + 1);
+        s.flash = 1;
+        audio.play('metal', { vol: 0.55 });
+        this.r.camera.addShake(3.2);
+        particles.burst(paneX - 2, c.y + 2, 7, {
+          colors: ['#dff2f5', '#a9dbe0', '#7fb4bb'], speed: 80, life: 0.45, vz: 60, gravity: 300, additive: true,
+        });
+      }
+    } else if (s.phase === 'hit') {
+      p.x += (c.x - 2 - p.x) * Math.min(1, dt * 9);
+      p.anim = 'idle';
+      if (s.t > 1.1) { s.phase = 'pace'; s.t = 0; }
+    }
+    s.flash = Math.max(0, s.flash - dt * 4);
+    p.animT = (p.animT + dt * (p.anim === 'run' ? 1.9 : p.anim === 'walk' ? 1.1 : 0.5)) % 1;
+    // Keep the tank framed on the left third, whatever the device resolution
+    // is, so the title plate on the right never lands on top of it.
+    this.r.camera.follow(c.x + VIEW_W * 0.22, c.y + VIEW_H * 0.04);
   }
 
   updateEnding(dt, won) {
@@ -210,7 +455,8 @@ export class Game {
     if (won) this.victoryT += dt; else this.deathT += dt;
     particles.update(dt);
     this.r.camera.update(dt);
-    if ((won ? this.victoryT : this.deathT) > 2.5 && (this.input.anyKeyPressed || this.input.mouse.pressed)) {
+    this.input.touch.uiMode = true;
+    if ((won ? this.victoryT : this.deathT) > 2.5 && (this.input.anyKeyPressed || this.input.takeTap())) {
       if (won) {
         this.director.goEndless();
         this.state = STATE.PLAY;
@@ -223,6 +469,7 @@ export class Game {
   }
 
   updateAudioMood(dt) {
+    if (this.mode === 'lab' || (this.firstStand && this.firstStand.active)) { audio.update(dt); return; }
     const d = this.director;
     let target = 0.1;
     if (d.phase === PHASE.ASSAULT) target = this.boss ? 1 : 0.62;
@@ -235,15 +482,45 @@ export class Game {
 
   handlePanelKeys() {
     const i = this.input;
-    if (i.keyPressed('Tab')) this.panels.toggle('craft');
-    if (i.keyPressed('KeyC')) this.panels.toggle('chips');
-    if (i.keyPressed('KeyM')) this.panels.toggle('map');
+    if (i.keyPressed('Tab') || i.touch.isPressed('craft')) this.panels.toggle('craft');
+    if (i.keyPressed('KeyC') || i.touch.isPressed('chips')) this.panels.toggle('chips');
+    if (i.keyPressed('KeyM') || i.touch.isPressed('map')) this.panels.toggle('map');
+    if (i.isPressed('fullscreen')) toggleFullscreen(document.documentElement);
+  }
+
+  /**
+   * Thumb aiming needs help a mouse does not. If the player is pointing within
+   * a narrow cone of something shootable, quietly snap onto it.
+   */
+  aimAssist(x, y, angle) {
+    let best = null, bestScore = Infinity;
+    for (const e of this.enemies) {
+      if (e.dead || e.spawnT > 0 || e.charmT > 0) continue;
+      const dx = e.x - x, dy = e.y - 6 - y;
+      const d = Math.hypot(dx, dy);
+      if (d > 300) continue;
+      let diff = Math.atan2(dy, dx) - angle;
+      while (diff > Math.PI) diff -= TAU;
+      while (diff < -Math.PI) diff += TAU;
+      const cone = 0.30 + Math.min(0.16, 26 / Math.max(30, d));
+      if (Math.abs(diff) > cone) continue;
+      const score = Math.abs(diff) * 220 + d * 0.35;
+      if (score < bestScore) { bestScore = score; best = Math.atan2(dy, dx); }
+    }
+    return best;
   }
 
   handleAbilityKeys() {
     if (this.uiBlocksInput) return;
     const i = this.input;
     const p = this.player;
+
+    // Touch has no number row, so one button cycles the arsenal.
+    if (i.isPressed('weapon') && p.weapons.length > 1) {
+      p.weaponIndex = (p.weaponIndex + 1) % p.weapons.length;
+      audio.play('ui');
+      this.toast(p.weapon.name, P.ui, 1.4);
+    }
 
     // throw water where you're aiming
     if (i.isPressed('douse')) {
@@ -314,6 +591,21 @@ export class Game {
       return;
     }
 
+    // Animals first: they are the thing you are most often standing next to.
+    const beast = this.wildlife.nearestFriendly(p.x, p.y, 34);
+    if (beast) {
+      if (beast.downT > 0) {
+        consider(beast, 'revive', 'REVIVE ' + beast.name.toUpperCase(), beast.x, beast.y, 34);
+      } else {
+        const tool = beast.bonded ? this.nextToolFor(beast) : null;
+        const food = beast.def.likes.find(k => p.inv.get(k) > 0);
+        if (tool) consider(beast, 'equip', 'FIT ' + TOOLS[tool].name.toUpperCase(), beast.x, beast.y, 34);
+        else if (food && beast.trust < 100) {
+          consider(beast, 'feed', 'FEED ' + beast.name.toUpperCase() + ' (' + food.toUpperCase() + ')', beast.x, beast.y, 34);
+        }
+      }
+    }
+
     for (const n of this.npcs) {
       const lbl = n.currentPrompt(this);
       if (lbl) consider(n, 'npc', lbl, n.x, n.y, 30);
@@ -353,6 +645,30 @@ export class Game {
       if (this.dialogue.isOpen && this.dialogue.advance()) return;
       switch (best.kind) {
         case 'npc': best.obj.interact(this); break;
+        case 'feed': {
+          const a = best.obj;
+          const food = a.def.likes.find(k => p.inv.get(k) > 0);
+          if (food && p.inv.take(food, 1)) {
+            a.feed(food, this);
+            this.flyItem(food, p.x, p.y - 10, a.x, a.y - 6, 0.32);
+          }
+          break;
+        }
+        case 'equip': {
+          const a = best.obj;
+          const tool = this.nextToolFor(a);
+          if (tool && a.giveTool(tool, this)) this.toolBag[tool]--;
+          break;
+        }
+        case 'revive': {
+          const a = best.obj;
+          a.downT = 0;
+          a.hp = a.maxHpStat * 0.5;
+          audio.play('rescue');
+          particles.ring(a.x, a.y - 6, 4, 30, 0.5, P.uiGood, 2, true);
+          a.addTrust(8, this, 'revived');
+          break;
+        }
         case 'wreck': best.obj.loot(this); break;
         case 'rescue': this.pickUpAnimal(best.obj); break;
         case 'water': {
@@ -495,6 +811,32 @@ export class Game {
     this.flyers.push({ item, x0, y0, x1, y1, t: 0, dur });
   }
 
+  /** The crescent left behind by a claw swing. */
+  spawnSlash(x, y, angle, reach, arc) {
+    this.slashes.push({ x, y, a: angle, reach, arc, t: 0, life: 0.2 });
+    if (this.slashes.length > 10) this.slashes.shift();
+  }
+
+  updateSlashes(dt) {
+    for (let i = this.slashes.length - 1; i >= 0; i--) {
+      const s = this.slashes[i];
+      s.t += dt;
+      if (s.t >= s.life) this.slashes.splice(i, 1);
+    }
+  }
+
+  drawSlashes(r) {
+    for (const s of this.slashes) {
+      const f = clamp(s.t / s.life, 0, 1);
+      const sweep = s.arc * (0.4 + f * 0.9);
+      const rad = s.reach * (0.55 + f * 0.55);
+      const a0 = s.a - sweep / 2, a1 = s.a + sweep / 2;
+      r.arc(s.x, s.y, rad, a0, a1, '#ffffff', 2, (1 - f) * 0.9);
+      r.arc(s.x, s.y, rad - 3, a0 + 0.12, a1 - 0.12, P.furCream, 1, (1 - f) * 0.6);
+      r.glow(s.x + Math.cos(s.a) * rad * 0.6, s.y + Math.sin(s.a) * rad * 0.6, 18, 'rgba(255,255,235,0.5)', (1 - f) * 0.8);
+    }
+  }
+
   updateFlyers(dt) {
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
@@ -545,6 +887,42 @@ export class Game {
     return best;
   }
 
+  /** Closest enemy to an arbitrary point — used by the command reticle. */
+  enemyNear(x, y, r) {
+    let best = null, bd = Infinity;
+    for (const e of this.enemies) {
+      if (e.dead || e.charmT > 0) continue;
+      const d = dist2(x, y, e.x, e.y);
+      const reach = (r + e.r) * (r + e.r);
+      if (d < reach && d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
+
+  rallyBonus(seconds) { this.squad.rally(seconds); }
+
+  buildBarricadeAt(x, y) {
+    if (isSolid(this.world.tileAtPx(x, y))) return;
+    this.hazards.push(new Barricade(x, y));
+  }
+
+  onAnimalBonded(a) {
+    this.announce(a.name.toUpperCase() + ' FOLLOWS YOU', a.def.ability.toUpperCase(), P.favor, 3.4);
+    this.toast(a.def.pros, P.uiGood, 4);
+    if (this.squad.size === 0) this.toast('T TO COMMAND  -  Y ON ME  -  H HOLD', P.favor, 6);
+  }
+
+  /** Tools you have built but not yet strapped to anything. */
+  toolCount(k) { return this.toolBag[k] || 0; }
+  addTool(k, n = 1) { this.toolBag[k] = (this.toolBag[k] || 0) + n; }
+  /** The first built tool this animal is not already wearing. */
+  nextToolFor(a) {
+    for (const k of TOOL_KEYS) {
+      if (this.toolCount(k) > 0 && !a.hasTool(k)) return k;
+    }
+    return null;
+  }
+
   nearestFire(x, y, range) {
     const f = this.fire;
     if (f.burning.size === 0) return null;
@@ -563,6 +941,18 @@ export class Game {
 
   /** Resolve one friendly bullet against enemies. Returns 'consumed' if gone. */
   hitEnemies(b) {
+    // Shooting the wildlife is possible, and it costs you.
+    if (b.owner === this.player) {
+      for (const a of this.wildlife.animals) {
+        if (a.dead || a.downT > 0) continue;
+        const rr = a.r + b.radius;
+        if (dist2(b.x, b.y, a.x, a.y - 4) < rr * rr) {
+          a.damage(b.damage, this, true);
+          b.alive = false;
+          return 'consumed';
+        }
+      }
+    }
     for (const e of this.enemies) {
       if (e.dead || e.spawnT > 0) continue;
       if (e.charmT > 0) continue;
@@ -662,7 +1052,7 @@ export class Game {
         if (dn < radius) n.damage(damage * 0.6 * clamp(1 - dn / radius, 0.2, 1), this);
       }
       for (const a of this.wildlife.animals) {
-        if (dist2(x, y, a.x, a.y) < radius * radius) a.damage(damage * 0.5, this, true);
+        if (dist2(x, y, a.x, a.y) < radius * radius) a.damage(damage * 0.5, this, false);
       }
     }
   }
@@ -761,9 +1151,10 @@ export class Game {
     if (chance(0.4)) this.toast('THEY TOOK A TREE', P.uiWarn, 1.8);
   }
 
-  onAnimalLost(a, byFire, byPoacher) {
+  onAnimalLost(a, byFire) {
     this.stats.animalsLost++;
     if (a.def.kin) this.toast('A FERRET IS GONE', P.uiBad, 3);
+    else if (a.bonded) this.toast(a.name.toUpperCase() + ' IS GONE', P.uiBad, 3);
   }
 
   onQuestAccepted(npc, req) {
@@ -880,9 +1271,13 @@ export class Game {
       this.announce(WEAPONS[rec.give.weapon].name, 'BUILT', P.uiGood, 3);
     }
     if (rec.give.chipSlot) { p.chipSlots += rec.give.chipSlot; p.recompute(); this.toast('CHIP SOCKET ADDED', P.cyber); }
+    if (rec.give.tool) {
+      this.addTool(rec.give.tool);
+      this.toast(TOOLS[rec.give.tool].name.toUpperCase() + ' BUILT  -  [E] ON A FOLLOWER TO FIT IT', TOOLS[rec.give.tool].color, 4);
+    }
     if (rec.give.waterCap) { p.inv.setCap('water', p.inv.cap('water') + rec.give.waterCap); this.toast('WATER CAPACITY UP', P.waterFoam); }
     for (const k in rec.give) {
-      if (['weapon', 'chipSlot', 'waterCap'].includes(k)) continue;
+      if (['weapon', 'chipSlot', 'waterCap', 'tool'].includes(k)) continue;
       p.grant(k, rec.give[k], this, p.x, p.y - 18);
     }
     audio.play('craft');
@@ -901,11 +1296,28 @@ export class Game {
     const r = this.r;
     const ctx = r.ctx;
     const cam = r.camera;
+    const lab = this.mode === 'lab';
 
-    r.beginFrame(P.waterDeep);
+    // The helicopter flight is its own screen-space scene: no world at all.
+    if (lab && this.campaign.chapter === CHAPTER.HELI) {
+      r.beginFrame('#0a1018');
+      particles.draw(r, 0);
+      r.endWorld();
+      particles.drawTexts(r, drawText);
+      this.campaign.drawHud(r, ctx, this);
+      r.vignette(0.5);
+      if (this.hitFlash > 0) r.flash('#c0332a', this.hitFlash * 0.4);
+      this.input.touch.draw(r, this);
+      this.input.endFrame();
+      return;
+    }
+
+    r.beginFrame(lab ? '#0a1214' : P.waterDeep);
     this.world.drawGround(r);
-    this.drawWaterAndScorch(r);
-    this.wildlife.drawFish(r, cam);
+    if (!lab) {
+      this.drawWaterAndScorch(r);
+      this.wildlife.drawFish(r, cam);
+    }
     particles.draw(r, -1);
 
     // ground-layer hazards (mortar rings, firebomb markers)
@@ -915,7 +1327,8 @@ export class Game {
     const list = this.drawList;
     list.length = 0;
     this.world.collectDrawables(cam, list);
-    this.wildlife.collect(list, cam);
+    if (lab) this.campaign.collect(list, cam);
+    else this.wildlife.collect(list, cam);
     this.pickups.collect(list, cam);
     for (const e of this.enemies) if (cam.visible(e.x, e.y, 60)) list.push(e);
     for (const w of this.wrecks) if (cam.visible(w.x, w.y, 40)) list.push(w);
@@ -930,18 +1343,29 @@ export class Game {
       this.drawWorldObject(r, o);
     }
 
-    this.fire.draw(r, this.time);
+    if (!lab) this.fire.draw(r, this.time);
+    else this.campaign.drawWorld(r, this);
     this.bullets.draw(r);
     this.drawChainArcs(r);
+    this.drawSlashes(r);
+    if (!lab) this.squad.drawWorld(r, this);
     this.drawFlyers(r);
     particles.draw(r, 0);
     for (const h of this.hazards) if (h.layer === 'over') h.draw(r, this);
     this.drawSpawnWarnings(r);
 
     // lighting
-    const amb = this.ambientColor();
+    const amb = this.state === STATE.TITLE ? 'rgb(74,86,94)' : this.ambientColor();
     if (amb) {
       r.clearLight(amb);
+      if (this.state === STATE.TITLE) {
+        // Two strip lights, one over each tank. Everything else is corridor.
+        const c = this.campaign.marks.cage, b = this.campaign.marks.beaverCage;
+        r.light(c.x, c.y - 4, 74, 'rgba(206,244,252,0.95)', 1);
+        r.light(b.x, b.y - 4, 62, 'rgba(150,206,220,0.75)', 0.85);
+        const pane = (c.tx + 3) * TS + TS / 2;
+        if (this.pound.flash > 0) r.light(pane, c.y, 46, 'rgba(230,250,255,1)', this.pound.flash);
+      }
       this.player.drawLight(r);
       for (const e of this.enemies) if (cam.visible(e.x, e.y, 60)) e.drawLight(r);
       this.fire.drawLight(r);
@@ -971,16 +1395,23 @@ export class Game {
     if (this.state === STATE.TITLE) { this.drawTitle(r, ctx); this.input.endFrame(); return; }
 
     this.hud.draw(r, this);
+    if (lab) this.campaign.drawHud(r, ctx, this);
+    else this.squad.drawHud(r, ctx, this);
+    if (this.firstStand) this.firstStand.drawHud(r, ctx, this);
     this.panels.draw(r, this);
 
     if (this.state === STATE.PAUSED) this.drawPause(r, ctx);
     if (this.state === STATE.DEAD) this.drawDeath(r, ctx);
     if (this.state === STATE.VICTORY) this.drawVictory(r, ctx);
 
-    if (this.showFps) drawText(ctx, this.loop.fps + ' FPS  ' + this.bullets.count + ' B  ' + this.enemies.length + ' E', 4, VIEW_H - 24, P.uiDim);
+    this.input.touch.draw(r, this);
+
+    if (this.showFps) drawText(ctx, this.loop.fps + ' FPS  ' + this.bullets.count + ' B  ' + this.enemies.length + ' E', 4, VIEW_H - 34, P.uiDim);
   }
 
   ambientColor() {
+    // Indoors it is always strip-lit dusk, whatever the clock says.
+    if (this.mode === 'lab') return 'rgb(126,142,150)';
     const n = this.nightFactor;
     const fire = this.fire.intensity;
     if (n < 0.03 && fire < 0.03) return null;      // full daylight: skip the pass
@@ -1077,34 +1508,133 @@ export class Game {
   // --- screens -------------------------------------------------------------
   drawTitle(r, ctx) {
     const cx = VIEW_W / 2;
-    r.uiRect(0, 0, VIEW_W, VIEW_H, 'rgba(6,10,8,0.55)');
-    const logo = nestLogoSprite(1.4);
-    ctx.globalAlpha = 0.22;
-    ctx.drawImage(logo, Math.round(cx - logo.width / 2), 26);
+    const cam = this.r.camera;
+    const c = this.campaign.marks.cage;
+
+    // cracks spreading across the pane you keep hitting
+    this.drawCageCracks(r, ctx, c);
+
+    // The facility only dims behind the title column: the tank stays lit.
+    const gx = Math.round(VIEW_W * 0.36);
+    const grad = ctx.createLinearGradient(gx, 0, VIEW_W, 0);
+    grad.addColorStop(0, 'rgba(4,9,11,0)');
+    grad.addColorStop(0.35, 'rgba(4,9,11,0.72)');
+    grad.addColorStop(1, 'rgba(4,9,11,0.9)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(gx, 0, VIEW_W - gx, VIEW_H);
+    r.uiRect(0, 0, VIEW_W, VIEW_H, 'rgba(4,9,11,0.14)');
+    this.drawTankFrame(r, ctx);
+    const logo = nestLogoSprite(1);
+    ctx.globalAlpha = 0.14;
+    ctx.drawImage(logo, Math.round(VIEW_W - logo.width - 6), 6);
     ctx.globalAlpha = 1;
 
-    drawText(ctx, 'FERRET', cx, 58, P.furCream, { align: 'center', scale: 4, shadow: '#000' });
-    drawText(ctx, 'FIGHTS BACK', cx, 92, P.cyber, { align: 'center', scale: 3, shadow: '#000' });
-    drawText(ctx, 'A YELLOWSTONE SURVIVAL BULLET-HELL', cx, 118, P.uiDim, { align: 'center', shadow: true });
+    // --- title plate -------------------------------------------------------
+    const narrow = VIEW_W < 380;
+    const tx = narrow ? cx : Math.round(VIEW_W * 0.62);
+    const align = 'center';
+    const ts = narrow ? 3 : 4;
+    let y = Math.round(VIEW_H * 0.13);
+    drawText(ctx, 'FERRET', tx, y, P.furCream, { align, scale: ts, shadow: '#000' });
+    y += ts * 8 + 3;
+    drawText(ctx, 'FIGHTS BACK', tx, y, P.cyber, { align, scale: ts - 1, shadow: '#000' });
+    y += (ts - 1) * 8 + 6;
+    drawText(ctx, 'SUBJECT 41  -  MUSTELA NIGRIPES  -  DAY 612', tx, y, P.nestTealHi, { align, shadow: true });
 
-    const lines = [
-      'THEY TOOK YOU AS A KIT. THEY GAVE YOU AN EYE THAT ISN\'T YOURS.',
-      'NOW LES NEST WANTS THE REST OF THE BASIN.',
-    ];
-    lines.forEach((l, i) => drawText(ctx, l, cx, 136 + i * 10, P.uiDim, { align: 'center', shadow: true }));
+    // --- menu --------------------------------------------------------------
+    y += 16;
+    const bw = Math.min(206, VIEW_W - 24);
+    const bx = Math.round(tx - bw / 2);
+    this.menu.rects.length = 0;
+    this.menu.items.forEach((it, i) => {
+      const on = i === this.menu.sel;
+      const by = y + i * 26;
+      this.menu.rects.push({ x: bx, y: by, w: bw, h: 22 });
+      r.uiRect(bx, by, bw, 22, on ? 'rgba(20,44,44,0.92)' : 'rgba(8,16,18,0.82)');
+      r.uiStroke(bx, by, bw, 22, on ? P.cyber : '#2b3c40');
+      if (on) {
+        r.uiRect(bx, by, 2, 22, P.cyber);
+        const pulse = 0.5 + Math.sin(this.titleT * 8) * 0.5;
+        ctx.globalAlpha = 0.25 + pulse * 0.2;
+        r.uiRect(bx + 2, by + 1, bw - 3, 20, P.cyberDim);
+        ctx.globalAlpha = 1;
+      }
+      drawText(ctx, it.label, bx + 8, by + 4, on ? P.ui : P.uiDim, { shadow: true });
+      drawText(ctx, it.sub, bx + 8, by + 13, on ? '#bfe6ec' : '#5a6c70', { shadow: '#000' });
+    });
+    y += this.menu.items.length * 26 + 4;
 
+    const hint = this.input.touch.visible ? 'TAP TO CHOOSE' : 'W / S  -  ENTER OR E';
     const blink = Math.floor(this.titleT * 2) % 2 === 0;
-    if (blink) drawText(ctx, 'PRESS ANY KEY', cx, 172, P.ui, { align: 'center', scale: 2, shadow: '#000' });
+    if (blink) drawText(ctx, hint, tx, y + 2, P.uiWarn, { align, shadow: true });
 
-    const controls = [
-      'WASD MOVE      MOUSE AIM / FIRE      SHIFT FOCUS-WALK',
-      'E  GATHER / TALK / LOOT      SPACE DASH      Q  SCAN',
-      'R  THROW WATER      F  EAT / PATCH UP      G  SMOKE',
-      'TAB CRAFT      C  CHIPS      M  MAP      ESC PAUSE',
-      'RIGHT MOUSE  OVERCLOCK (BURNS HEALTH FOR POWER)',
+    // --- controls, low and quiet ------------------------------------------
+    const controls = this.input.touch.visible ? [
+      'LEFT THUMB MOVES     RIGHT THUMB AIMS AND FIRES',
+      'BUTTONS: GATHER  DASH  CLAW  PARRY  CRAFT  ORDERS',
+    ] : [
+      'WASD MOVE   MOUSE AIM/FIRE   SPACE DASH   X CLAW',
+      'E GATHER/TALK   SHIFT FOCUS   Q SCAN   R WATER   F EAT',
+      'TAB CRAFT   C CHIPS   M MAP   T ORDERS   RMB OVERCLOCK',
     ];
-    controls.forEach((l, i) => drawText(ctx, l, cx, 200 + i * 9, i === 4 ? P.cyberDim : P.uiDim, { align: 'center', shadow: true }));
-    drawText(ctx, 'SEED ' + this.seed, VIEW_W - 6, VIEW_H - 10, P.uiDim, { align: 'right' });
+    const cy0 = VIEW_H - 8 - controls.length * 9;
+    controls.forEach((l, i) => drawText(ctx, l, cx, cy0 + i * 9, '#46585c', { align: 'center', shadow: true }));
+    drawText(ctx, 'SEED ' + this.seed, VIEW_W - 5, VIEW_H - 9, '#3a4a4e', { align: 'right' });
+  }
+
+  /** A hard specular edge around the tank, so it reads as a glass box. */
+  drawTankFrame(r, ctx) {
+    const cam = this.r.camera;
+    const c = this.campaign.marks.cage;
+    const x = (c.tx - 3) * TS - cam.ox, y = (c.ty - 3) * TS - cam.oy;
+    const w = 7 * TS, h = 7 * TS;
+    ctx.globalAlpha = 0.5;
+    r.uiStroke(x, y, w, h, '#9fd8e2');
+    ctx.globalAlpha = 0.22;
+    r.uiStroke(x - 1, y - 1, w + 2, h + 2, '#5f939c');
+    ctx.globalAlpha = 0.16;
+    r.uiRect(x + 2, y + 2, w - 4, 3, '#dff2f5');
+    ctx.globalAlpha = 1;
+    const label = 'TANK 41';
+    drawText(ctx, label, Math.round(x + w / 2), Math.round(y - 9), P.nestTealHi, { align: 'center', shadow: '#000' });
+  }
+
+  /**
+   * The pane, drawn in screen space over the world: a fracture web that grows
+   * by one branch every time the ferret hits it.
+   */
+  drawCageCracks(r, ctx, c) {
+    const cam = this.r.camera;
+    const px = (c.tx + 3) * TS + TS / 2 - cam.ox;
+    const py = c.y - cam.oy;
+    const n = this.pound.cracks + 2;   // it was never pristine
+
+    ctx.save();
+    ctx.lineWidth = 1;
+    for (let i = 0; i < n; i++) {
+      const a = -1.9 + i * 0.62;
+      const len = 16 + (i % 3) * 11;
+      ctx.strokeStyle = i % 2 ? 'rgba(233,250,253,0.95)' : 'rgba(179,229,234,0.75)';
+      ctx.beginPath();
+      let x = px, y = py;
+      ctx.moveTo(x + 0.5, y + 0.5);
+      for (let k = 1; k <= 4; k++) {
+        const wob = Math.sin(i * 3.1 + k * 2.3) * 4;
+        x = px + Math.cos(a) * (len * k / 4) + wob;
+        y = py + Math.sin(a) * (len * k / 4) * 1.15 + Math.cos(i + k) * 3;
+        ctx.lineTo(Math.round(x) + 0.5, Math.round(y) + 0.5);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    if (this.pound.flash > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = this.pound.flash * 0.6;
+      r.uiRect(px - 10, py - 12, 20, 24, '#bfe6ec');
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
   }
 
   drawPause(r, ctx) {

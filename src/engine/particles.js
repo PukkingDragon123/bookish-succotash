@@ -4,6 +4,7 @@
 
 import { rnd } from './rng.js';
 import { TAU, clamp } from './math.js';
+import { VIEW_W, VIEW_H } from './canvas.js';
 
 const MAX = 1400;
 
@@ -202,7 +203,7 @@ export class Particles {
       if (!p.alive || p.layer !== layer) continue;
       const sx = Math.round(p.x - ox);
       const sy = Math.round(p.y - p.z - oy);
-      if (sx < -8 || sy < -8 || sx > 488 || sy > 278) continue;
+      if (sx < -8 || sy < -8 || sx > VIEW_W + 8 || sy > VIEW_H + 8) continue;
       const t = p.life / p.maxLife;
       const ci = clamp(Math.floor((1 - t) * p.colors.length), 0, p.colors.length - 1);
       // t runs 1 -> 0 over the lifetime, so this interpolates size -> endSize.

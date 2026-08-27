@@ -37,6 +37,14 @@ export const ENEMY_TYPES = {
     r: 7, contact: 10, xp: 4, machine: false, keep: 110, fireEvery: 1.7,
     loot: [['ammo', 5, 0.8], ['scrap', 2, 0.5]], chipChance: 0.35,
   },
+  // The lab's own security. Slower rounds than the field enforcers, because
+  // the first fight of the game has to be winnable with claws alone.
+  labGuard: {
+    name: 'Block Guard', art: 'critter', species: 'enforcer', hp: 46, speed: 40,
+    r: 7, contact: 8, xp: 3, machine: false, keep: 96, fireEvery: 2.2,
+    bulletSpeed: 105, burst: 2,
+    loot: [['ammo', 6, 0.9], ['scrap', 1, 0.4]], chipChance: 0,
+  },
   technician: {
     name: 'Nest Technician', art: 'critter', species: 'scientist', hp: 28, speed: 30,
     r: 6, contact: 4, xp: 1, machine: false, keep: 190, fireEvery: 3.2,
@@ -118,6 +126,8 @@ export class Enemy {
     this.hover = rnd(TAU);
     this.strafe = chance(0.5) ? 1 : -1;
     this.telegraph = 0;
+    this.burstN = 0;
+    this.burstT = 0;
     this.telegraphKind = null;
     this.charmT = 0;             // Cobalt's hijack: fights for you for a while
     this.objType = 'enemy';
@@ -190,6 +200,7 @@ export class Enemy {
       case 'trapper':   this.aiTrapper(dt, game, target, d); break;
       case 'logger':    this.aiLogger(dt, game, target, d); break;
       case 'enforcer':  this.aiEnforcer(dt, game, target, d); break;
+      case 'labGuard':  this.aiLabGuard(dt, game, target, d); break;
       case 'technician':this.aiTechnician(dt, game, target, d); break;
       case 'drone':     this.aiDrone(dt, game, target, d); break;
       case 'spider':    this.aiSpider(dt, game, target, d); break;
@@ -288,6 +299,29 @@ export class Enemy {
       Pattern.fan(game, this.x, this.y - 8, target.x, target.y - 6, 3, 0.22, 150, { damage: 9, kind: 'redOrb' });
       audio.play('shotgun', { vol: 0.5 });
       particles.burst(this.x, this.y - 8, 4, { colors: [P.fire1, P.fire2], speed: 60, life: 0.2, additive: true });
+    }
+  }
+
+  aiLabGuard(dt, game, target, d) {
+    // Deliberately legible: he backs off, telegraphs, then fires two slow
+    // rounds you are meant to learn to parry.
+    this.approach(dt, game, target.x, target.y, this.def.keep);
+    if (this.fireT <= 0 && d < 220) {
+      this.fireT = this.def.fireEvery * rnd(0.9, 1.2);
+      this.telegraph = 0.34;
+      this.burstN = this.def.burst || 2;
+      this.burstT = 0.34;
+    }
+    if (this.burstN > 0) {
+      this.burstT -= dt;
+      if (this.burstT <= 0) {
+        this.burstN--;
+        this.burstT = 0.18;
+        Pattern.aimed(game, this.x, this.y - 8, target.x, target.y - 6, this.def.bulletSpeed || 110, {
+          kind: 'dart', damage: 8, offset: rnd(-0.06, 0.06),
+        });
+        audio.play('rifle', { vol: 0.4 });
+      }
     }
   }
 
@@ -643,6 +677,14 @@ export class Enemy {
     if (this.dead) return 0;
     let dmg = n;
     if (this.markT > 0) dmg *= 1.2;
+    // Scripted ceramic plate: the hit lands, the damage does not.
+    if (this.armour) {
+      dmg *= this.armour;
+      if (!silent && chance(0.5)) {
+        particles.text(this.x, this.y - 22, 'PLATE', P.uiDim, { life: 0.6 });
+        audio.play('metal', { vol: 0.35 });
+      }
+    }
     this.hp -= dmg;
     this.hurtT = 0.14;
     if (bullet) {

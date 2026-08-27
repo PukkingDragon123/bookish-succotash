@@ -20,6 +20,14 @@ const BASE_SPEED = 92;
 const RUN_MULT = 1.34;
 const MAX_WOOD = 10;
 
+const MELEE_REACH = 27;
+const MELEE_ARC = 1.15;        // radians, total spread
+const MELEE_COST = 12;
+const MELEE_CD = 0.40;
+const PARRY_WINDOW = 0.18;     // guard is live for this long from the swing
+const PARRY_PERFECT = 0.09;    // ...and this much of it is a perfect parry
+const GRAZE_DIST = 11;
+
 export class Player {
   constructor(x, y) {
     this.x = x; this.y = y;
@@ -46,6 +54,20 @@ export class Player {
 
     this.overclock = false;
     this.overclockT = 0;
+
+    // Close-quarters combat. One button does both jobs: press it and you swing;
+    // press it as something is about to hit you and the first frames of that
+    // swing are a parry. Timing is the whole skill.
+    this.meleeT = 0;          // swing animation timer
+    this.meleeCd = 0;
+    this.parryT = 0;          // remaining guard window
+    this.parryPerfectT = 0;   // the tighter window inside it
+    this.parryFlash = 0;
+    this.combo = 0;           // successful parries/grazes in a row
+    this.comboT = 0;
+    this.edgeBuffT = 0;       // damage bonus from parries and perfect dodges
+    this.grazeCd = 0;
+    this.lastMeleeAngle = 0;
 
     this.scanT = 0; this.scanCd = 0;
 
@@ -77,6 +99,10 @@ export class Player {
     this.footT = 0;
     this.blinkT = 0;
     this.regenAcc = 0;
+    // Permanent story bonuses. Kept apart from chips so recompute() can rebuild
+    // the chip stats from scratch without wiping them.
+    this.bonus = { damage: 0, speed: 0, hp: 0, rof: 0 };
+    this.spite = false;
 
     this.recompute();
     this.hp = this.maxHp;
@@ -94,6 +120,7 @@ export class Player {
       if (!c) continue;
       for (const k in c.stat) s[k] = (s[k] || 0) + c.stat[k];
     }
+    for (const k in this.bonus) s[k] = (s[k] || 0) + this.bonus[k];
     this.stats = s;
     const newMax = 100 + s.hp;
     if (newMax !== this.maxHp) {
@@ -144,7 +171,7 @@ export class Player {
   }
 
   // --- main update ---------------------------------------------------------
-  update(dt, game) {
+  update(dt, game, frozen = false) {
     if (this.dead) { this.deathT += dt; return; }
     const input = game.input;
     const world = game.world;
@@ -156,16 +183,36 @@ export class Player {
     this.scanT = Math.max(0, this.scanT - dt);
     this.scanCd = Math.max(0, this.scanCd - dt);
     this.dashCd = Math.max(0, this.dashCd - dt);
+    this.meleeCd = Math.max(0, this.meleeCd - dt);
+    this.parryT = Math.max(0, this.parryT - dt);
+    this.parryPerfectT = Math.max(0, this.parryPerfectT - dt);
+    this.parryFlash = Math.max(0, this.parryFlash - dt * 3.5);
+    this.grazeCd = Math.max(0, this.grazeCd - dt);
+    this.edgeBuffT = Math.max(0, this.edgeBuffT - dt);
+    if (this.meleeT > 0) this.meleeT = Math.max(0, this.meleeT - dt);
+    if (this.comboT > 0) { this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; }
     this.blinkT += dt;
 
     // --- aim -------------------------------------------------------------
-    const mw = game.r.camera.toWorld(input.mouse.sx, input.mouse.sy);
-    this.aimX = mw.x; this.aimY = mw.y;
-    this.aim = Math.atan2(mw.y - (this.y - 10), mw.x - this.x);
+    const stick = input.aimVector();
+    if (stick) {
+      // Twin-stick aiming, with a light magnetism toward whatever you are
+      // clearly pointing at — a thumb is not a mouse.
+      let a = Math.atan2(stick.y, stick.x);
+      const snap = game.aimAssist(this.x, this.y - 10, a);
+      if (snap != null) a = snap;
+      this.aim = a;
+      this.aimX = this.x + Math.cos(a) * 140;
+      this.aimY = this.y - 10 + Math.sin(a) * 140;
+    } else {
+      const mw = game.r.camera.toWorld(input.mouse.sx, input.mouse.sy);
+      this.aimX = mw.x; this.aimY = mw.y;
+      this.aim = Math.atan2(mw.y - (this.y - 10), mw.x - this.x);
+    }
 
     // --- movement --------------------------------------------------------
     const ax = input.axes();
-    const uiBlocked = game.uiBlocksInput;
+    const uiBlocked = game.uiBlocksInput || frozen;
     const moveX = uiBlocked ? 0 : ax.x, moveY = uiBlocked ? 0 : ax.y;
     const moving = Math.hypot(moveX, moveY) > 0.05;
 
@@ -201,7 +248,8 @@ export class Player {
     // --- animation state --------------------------------------------------
     const spd = Math.hypot(this.vx, this.vy);
     let anim = 'idle';
-    if (this.hurtT > 0.05) anim = 'hurt';
+    if (this.meleeT > 0) anim = 'attack';
+    else if (this.hurtT > 0.05) anim = 'hurt';
     else if (this.dashT > 0) anim = 'run';
     else if (this.gatherT > 0) anim = 'attack';
     else if (spd > 130) anim = 'run';
@@ -238,12 +286,15 @@ export class Player {
       game.r.camera.addShake(1.6);
     }
 
+    // --- claw / parry ------------------------------------------------------
+    if (!uiBlocked && input.isPressed('melee')) this.tryMelee(game);
+
     // --- energy -----------------------------------------------------------
     const regenRate = this.dashT > 0 ? 0 : (moving ? 15 : 26);
     this.energy = clamp(this.energy + regenRate * dt, 0, this.maxEnergy);
 
     // --- overclock (the lab's other gift) ---------------------------------
-    const wantOverclock = !uiBlocked && input.mouse.rdown && this.hp > 12;
+    const wantOverclock = !uiBlocked && (input.mouse.rdown || input.isDown('overclock')) && this.hp > 12;
     if (wantOverclock !== this.overclock) {
       this.overclock = wantOverclock;
       if (wantOverclock) audio.play('scan', { vol: 0.4 });
@@ -284,7 +335,8 @@ export class Player {
 
     // --- shooting ---------------------------------------------------------
     this.fireT -= dt;
-    if (!uiBlocked && input.mouse.down && this.fireT <= 0 && this.gatherT <= 0) this.tryShoot(game);
+    // In command mode the click issues orders instead of pulling a trigger.
+    if (!uiBlocked && !game.squad.commandMode && input.firing && this.fireT <= 0 && this.gatherT <= 0) this.tryShoot(game);
 
     // --- weapon select ----------------------------------------------------
     if (!uiBlocked) {
@@ -350,6 +402,7 @@ export class Player {
   tryShoot(game) {
     const w = this.weapon;
     const key = this.weaponKey;
+    if (w.meleeOnly) return;                 // claws: the trigger does nothing
     const rof = w.rof / (1 + this.stats.rof + (this.overclock ? 0.6 : 0));
     // ammo
     if (w.ammo > 0) {
@@ -372,8 +425,7 @@ export class Player {
     const ox = this.x + Math.cos(this.aim) * muzzleDist;
     const oy = this.y - 10 + Math.sin(this.aim) * muzzleDist;
 
-    let dmg = w.damage * (1 + this.stats.damage) * (this.overclock ? 1.3 : 1);
-    if (this.stats.overclock && this.hp < this.maxHp * 0.4) dmg *= 1 + this.stats.overclock;
+    const dmg = w.damage * (1 + this.stats.damage) * this.damageMult;
 
     for (let i = 0; i < count; i++) {
       const off = count > 1 ? (i / (count - 1) - 0.5) * 2 : 0;
@@ -394,6 +446,123 @@ export class Player {
     this.vx -= Math.cos(this.aim) * (w.knock || 20) * 0.5;
     this.vy -= Math.sin(this.aim) * (w.knock || 20) * 0.5;
     particles.burst(ox, oy, 3, { colors: [P.fire1, P.fire2], speed: 60, life: 0.15, additive: true, angle: this.aim, spread: 0.4, gravity: 0 });
+  }
+
+  // --- close quarters ------------------------------------------------------
+  /** Swing the claws. The opening frames double as a parry. */
+  tryMelee(game) {
+    if (this.meleeCd > 0) return false;
+    if (this.energy < MELEE_COST) {
+      audio.play('deny', { vol: 0.5 });
+      return false;
+    }
+    this.energy -= MELEE_COST;
+    this.meleeCd = MELEE_CD;
+    this.meleeT = 0.24;
+    this.parryT = PARRY_WINDOW;
+    this.parryPerfectT = PARRY_PERFECT;
+    this.lastMeleeAngle = this.aim;
+    audio.play('dash', { vol: 0.5 });
+
+    // a small lunge, which is also what makes melee a movement option
+    this.vx += Math.cos(this.aim) * 150;
+    this.vy += Math.sin(this.aim) * 150;
+
+    const dmg = 26 * (1 + this.stats.damage) * this.damageMult;
+    let hits = 0;
+    for (const e of game.enemies) {
+      if (e.dead || e.spawnT > 0 || e.charmT > 0) continue;
+      const dx = e.x - this.x, dy = e.y - 6 - (this.y - 8);
+      const d = Math.hypot(dx, dy);
+      if (d > MELEE_REACH + e.r) continue;
+      let diff = Math.atan2(dy, dx) - this.aim;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) > MELEE_ARC / 2) continue;
+      e.damage(dmg, game, { vx: Math.cos(this.aim), vy: Math.sin(this.aim), knock: 190, owner: this, melee: true });
+      particles.burst(e.x, e.y - 6, 8, { colors: ['#ffffff', P.furCream, P.nestSteelHi], speed: 120, life: 0.3, additive: true, angle: this.aim, spread: 0.7 });
+      hits++;
+    }
+    // Machines take the claws badly; so do saw traps in the way.
+    for (const h of game.hazards) {
+      if (h.dead || !h.damage) continue;
+      if (Math.hypot(h.x - this.x, h.y - this.y) < MELEE_REACH + 6) { h.damage(dmg, game); hits++; }
+    }
+    if (hits) {
+      game.r.camera.addShake(2.4);
+      audio.play('flesh', { vol: 0.7 });
+      game.slowmo(0.55, 0.06);
+    }
+    game.spawnSlash(this.x, this.y - 8, this.aim, MELEE_REACH, MELEE_ARC);
+    return true;
+  }
+
+  get parryActive() { return this.parryT > 0; }
+
+  /** A hostile shot met by the claws is sent back where it came from. */
+  tryParry(b, game) {
+    if (this.parryT <= 0) return false;
+    const dx = b.x - this.x, dy = b.y - (this.y - 8);
+    const d = Math.hypot(dx, dy);
+    if (d > MELEE_REACH + b.radius + 4) return false;
+    let diff = Math.atan2(dy, dx) - this.lastMeleeAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) > MELEE_ARC * 0.75) return false;
+
+    const perfect = this.parryPerfectT > 0;
+    this.combo++;
+    this.comboT = 3.2;
+    this.edgeBuffT = Math.max(this.edgeBuffT, perfect ? 5 : 3);
+    this.energy = Math.min(this.maxEnergy, this.energy + (perfect ? 26 : 12));
+    this.parryFlash = 1;
+    this.invuln = Math.max(this.invuln, perfect ? 0.35 : 0.16);
+
+    // Send it back, at whatever is nearest to the aim.
+    const target = game.nearestEnemy(this.x, this.y, 260);
+    const a = target ? Math.atan2(target.y - 6 - b.y, target.x - b.x) : this.lastMeleeAngle;
+    const sp = Math.max(230, Math.hypot(b.vx, b.vy) * 1.5);
+    b.friendly = true;
+    b.owner = this;
+    b.vx = Math.cos(a) * sp;
+    b.vy = Math.sin(a) * sp;
+    b.rot = a;
+    b.damage = b.damage * (perfect ? 3.2 : 2) * (1 + this.stats.damage);
+    b.life = Math.max(b.life, 1.6);
+    b.pierce = Math.max(b.pierce, perfect ? 1 : 0);
+    b.glow = 'rgba(255,240,160,0.7)';
+    b.hits = null;
+
+    audio.play(perfect ? 'shieldbreak' : 'metal', { vol: 0.9 });
+    particles.ring(b.x, b.y, 3, perfect ? 34 : 22, 0.3, perfect ? '#ffffff' : P.sulfurHi, 2, true);
+    particles.text(this.x, this.y - 30, perfect ? 'PERFECT PARRY' : 'PARRY', perfect ? '#ffffff' : P.sulfurHi, { life: 0.9 });
+    game.slowmo(perfect ? 0.22 : 0.45, perfect ? 0.3 : 0.12);
+    game.r.camera.addShake(perfect ? 4 : 2);
+    return true;
+  }
+
+  /** Threading a shot at point-blank range during a dash pays you for it. */
+  tryGraze(b, game) {
+    if (this.grazeCd > 0 || this.dashT <= 0) return;
+    const d = Math.hypot(b.x - this.x, b.y - (this.y - 7));
+    if (d > GRAZE_DIST) return;
+    this.grazeCd = 0.35;
+    this.combo++;
+    this.comboT = 3.2;
+    this.edgeBuffT = Math.max(this.edgeBuffT, 2.6);
+    this.energy = Math.min(this.maxEnergy, this.energy + 10);
+    particles.text(this.x, this.y - 26, 'CLOSE', P.cyber, { life: 0.7 });
+    particles.ring(this.x, this.y - 7, 4, 16, 0.22, P.cyber, 1, true);
+    audio.play('sparker', { vol: 0.4 });
+    game.slowmo(0.6, 0.05);
+  }
+
+  /** Every damage source multiplies through here. */
+  get damageMult() {
+    let m = this.overclock ? 1.3 : 1;
+    if (this.stats.overclock && this.hp < this.maxHp * 0.4) m *= 1 + this.stats.overclock;
+    if (this.edgeBuffT > 0) m *= 1 + Math.min(0.6, 0.12 * this.combo);
+    return m;
   }
 
   damage(n, game, opts = {}) {
@@ -436,6 +605,11 @@ export class Player {
 
   die(game) {
     if (this.dead) return;
+    // You do not get a game over during a fight the script says you lose.
+    if (game.firstStand && game.firstStand.phase === 'fight') {
+      game.firstStand.knockDown(game);
+      return;
+    }
     this.dead = true;
     this.deathT = 0;
     this.overclock = false;
@@ -623,6 +797,17 @@ export class Player {
     // held weapon, rotated to the aim
     this.drawWeapon(r, game, flipped);
 
+    // the guard arc: visible feedback for a window measured in tenths
+    if (this.parryT > 0) {
+      const f = this.parryT / 0.18;
+      const perfect = this.parryPerfectT > 0;
+      r.arc(this.x, this.y - 8, 20, this.lastMeleeAngle - 0.6, this.lastMeleeAngle + 0.6,
+        perfect ? '#ffffff' : P.sulfurHi, 2, f * 0.9);
+    }
+    if (this.parryFlash > 0) {
+      r.ring(this.x, this.y - 8, 14 + (1 - this.parryFlash) * 16, '#ffffff', 2, this.parryFlash * 0.8);
+    }
+
     // shield bubble
     if (this.shieldUp) {
       const pulse = 0.5 + Math.sin(time * 4) * 0.12;
@@ -642,6 +827,7 @@ export class Player {
   }
 
   drawWeapon(r, game, flipped) {
+    if (this.weapon.meleeOnly) return;      // claws are already on your hands
     const w = this.weapon;
     const img = weaponSprite(w.art);
     const dist = 5 - this.recoil * 3;

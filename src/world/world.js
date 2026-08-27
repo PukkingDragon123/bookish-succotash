@@ -6,9 +6,10 @@
 import { makeRng, hash2 } from '../engine/rng.js';
 import { fbm, ridged, warpedFbm, cellular } from './noise.js';
 import { T, TILES, TS, drawTile, isSolid, isWater, tileSpeed } from './tiles.js';
-import { makeCanvas } from '../engine/canvas.js';
+import { makeCanvas, VIEW_W, VIEW_H } from '../engine/canvas.js';
 import { clamp, dist2, TAU } from '../engine/math.js';
 import { treeFrames, plantFrames, rockSprite, propSprite } from '../art/flora.js';
+import { labProp } from '../art/lab.js';
 
 export const CHUNK = 8;                 // tiles per chunk side
 export const CHUNK_PX = CHUNK * TS;
@@ -38,7 +39,7 @@ export const NODE_DEFS = {
 let nextNodeId = 1;
 
 export class World {
-  constructor(seed = 12345, w = 200, h = 160) {
+  constructor(seed = 12345, w = 200, h = 160, opts = {}) {
     this.seed = seed >>> 0;
     this.w = w; this.h = h;
     this.pxW = w * TS; this.pxH = h * TS;
@@ -56,7 +57,9 @@ export class World {
     this.geysers = [];
     this.den = { x: 0, y: 0 };
     this.npcSpots = [];
-    this.generate();
+    // A blank world skips terrain generation entirely: the lab lays its own
+    // floor plan into the same arrays.
+    if (!opts.blank) this.generate();
   }
 
   idx(tx, ty) { return ty * this.w + tx; }
@@ -507,8 +510,8 @@ export class World {
 
   drawGround(r) {
     const cam = r.camera;
-    const x0 = Math.floor(cam.ox / CHUNK_PX), x1 = Math.floor((cam.ox + 480) / CHUNK_PX);
-    const y0 = Math.floor(cam.oy / CHUNK_PX), y1 = Math.floor((cam.oy + 270) / CHUNK_PX);
+    const x0 = Math.floor(cam.ox / CHUNK_PX), x1 = Math.floor((cam.ox + VIEW_W) / CHUNK_PX);
+    const y0 = Math.floor(cam.oy / CHUNK_PX), y1 = Math.floor((cam.oy + VIEW_H) / CHUNK_PX);
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
         if (cx < 0 || cy < 0 || cx * CHUNK >= this.w || cy * CHUNK >= this.h) continue;
@@ -522,8 +525,8 @@ export class World {
   collectDrawables(cam, out) {
     const c = this.cellSize;
     const pad = 48;
-    const x0 = ((cam.ox - pad) / c) | 0, x1 = ((cam.ox + 480 + pad) / c) | 0;
-    const y0 = ((cam.oy - pad) / c) | 0, y1 = ((cam.oy + 270 + pad) / c) | 0;
+    const x0 = ((cam.ox - pad) / c) | 0, x1 = ((cam.ox + VIEW_W + pad) / c) | 0;
+    const y0 = ((cam.oy - pad) / c) | 0, y1 = ((cam.oy + VIEW_H + pad) / c) | 0;
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
         const arr = this.grid.get(cx + ',' + cy);
@@ -560,5 +563,6 @@ export function worldObjectSprite(o, time) {
     return f[i];
   }
   if (o.type === 'stump') return treeFrames('stump', o.variant)[0];
+  if (o.type === 'labprop') return labProp(o.kind, o.variant);
   return propSprite(o.kind, o.variant);
 }

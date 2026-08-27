@@ -6,9 +6,12 @@ the other ferrets living in the den — from poachers, logging crews, machines,
 and the corporation behind all three: **Les Nest**, whose logo is an empty nest
 holding one cracked egg and one dead bird.
 
-You were taken as a kit into a Les Nest laboratory. You came back out with a
-cybernetic eye, a seam of stitches down your side, and two abilities nobody
-asked for.
+You were taken as a kit into a Les Nest laboratory. You spent six hundred and
+twelve days in a glass tank in Block C. You came back out with a cybernetic eye,
+a seam of stitches down your side, an implant that talks to you, and a beaver
+friend you left on the floor of the holding block.
+
+The game opens in that tank, and the first hour of it is you getting out.
 
 Everything in the game is generated at runtime. There are no image files, no
 audio files, and no dependencies: every sprite is drawn pixel by pixel into an
@@ -29,22 +32,75 @@ Then open <http://localhost:8080/>.
 Any static server works. Add `?seed=anything` to the URL to replay a specific
 basin — the seed is shown on the title screen.
 
+It runs on phones and tablets. The internal resolution is chosen per device so
+the picture fills the screen at a whole-number pixel scale, and touch brings up
+twin thumbsticks plus a ring of action buttons that only shows the ones that do
+something where you are standing.
+
 ## Controls
 
 | | |
 |---|---|
 | **WASD / arrows** | move |
 | **Mouse** | aim · **hold left** to fire |
+| **X** | **claw** — a real melee swing, and the only weapon you start with |
+| **Space** | dash. Time it into a bullet and it is a **graze**; time it out of a claw swing and it is a **parry** |
 | **Right mouse** | **Overclock** — burns your own health for fire rate and damage |
 | **Shift** | focus-walk (slow, precise; your hitbox is tiny) |
-| **Space** | dash (brief invulnerability) |
 | **E** | talk · accept · gather · chop · mine · loot a wreck · fill water · pick up a trapped animal |
 | **Q** | **Scan pulse** — the lab eye. Marks enemies for +20% damage and lights up nearby ore |
 | **R** | throw water where you are aiming (puts fires out) |
 | **F** | eat berries / use salve |
 | **G** | smoke bomb, or wake a geyser once Thermal has wired the field |
+| **T / Y / H** | squad: command mode · rally · hold · **1–6** filters by role |
 | **1–5 / wheel** | switch weapon |
 | **Tab** | crafting · **C** chips · **M** map · **Esc** pause · **F1** perf readout |
+
+### Skill, not just aim
+
+Three things separate surviving a screen full of bullets from dying in it:
+
+- **Dodge.** Dashing through a bullet without touching it is a *graze*: it
+  builds a combo that raises your damage and refunds stamina.
+- **Parry.** A claw swing opens a window. A hostile round caught inside that
+  window is turned around and sent back at double damage — triple if you
+  catch it in the first ninety milliseconds.
+- **Melee.** Claws cost stamina and hit in an arc. Against anything armoured
+  they are usually a worse idea than they feel like.
+
+## The story
+
+Choosing **BEGIN** on the title screen starts the campaign in Block C:
+
+1. **The tank.** You wake in the glass. Dax, a beaver two years into chewing
+   through his own tank seal, introduces himself through the pane.
+2. **The course.** They run you through an obstacle course for food. It is
+   tiring — a real exhaustion meter that drains your speed the longer you run —
+   and there is a dish at the end.
+3. **The plan.** He hits it low, you hit it high, same moment, every time.
+4. **The break.** Mash. The pane goes.
+5. **The shot.** The alarm brings a guard, and the guard shoots Dax in front of
+   you. There is blood, and there is a floor that keeps it.
+6. **Feral.** You take him apart with your claws, and then you take his gun.
+   The implant in your head wakes up and starts talking. It has been counting
+   the days with you.
+7. **The rampage.** Holding block, corridor, the surgery they used on you, the
+   security wing, the roof.
+8. **The transport.** You fly it. You are not a pilot. It comes down in a
+   basin somewhere north, which is where the rest of the game happens.
+
+You can skip all of it from the menu and start in the basin instead.
+
+### The first fight, which you lose
+
+Les Nest follows the transport down. What arrives is not a wave — it is a
+survey team with an armoured escort, and their plate does not care about a
+stolen seed popper. The fight is scripted and you lose it. They take eleven
+trees and two of the others while you are on the ground.
+
+Getting back up is a button press, and it is worth **+25 health, +25% damage and
++8% speed** permanently. The implant is blunt about why you lost: you fought
+alone, with what you stole. Everything after that is about not doing that again.
 
 ## The loop
 
@@ -87,6 +143,47 @@ Three completed requests and they will pick up a gun and follow you.
 | **Doc Quill** | porcupine medic, fussy | quill volley + a second chance |
 | **Bramble** | badger digger, blunt | burrow slam |
 
+### The animals
+
+Twenty-two species live in the basin, each drawn on its own rig — three-segment
+legs, ear and horn and antler builders, tails with their own profile — rather
+than a recoloured template. **Bison, moose, bear, elk, pronghorn, bighorn,
+wolf, coyote, fox, hare, squirrel, hedgehog, marmot, pika, beaver, otter,
+raven, magpie, eagle, crane** and two kinds of ferret.
+
+They do not all react the same way when the trucks arrive:
+
+| temperament | who | what they do |
+|---|---|---|
+| **flee** | hare, pika, marmot, squirrel | scatter, and keep scattering |
+| **skittish** | pronghorn, crane, magpie | bolt, circle back, bolt again |
+| **bold** | bison, moose, bighorn | hold ground, and charge what pushes them |
+| **defensive** | hedgehog, beaver, otter | dig in where they are |
+| **pack** | wolf, coyote | flank, and only commit with numbers |
+| **aggro** | bear, eagle | go straight at it |
+
+### Trust, tools and orders
+
+Feed an animal and it remembers. Trust is a real number per animal: at **50**
+it bonds and follows you, at **100** it is devoted and will not leave. Bonded
+animals fight, and what they are good at depends on what they are — a bear is a
+wall, a wolf is a flank, a raven spots for you, a hedgehog is a mobile minefield.
+
+You can also **mod them**. Craft a tool at the workbench and fit it:
+
+| tool | what it does |
+|---|---|
+| **harness** | straps a gun to them — they shoot |
+| **plate** | +60 health, and slower |
+| **chip** | +50% melee damage |
+| **pack** | they forage while they follow you |
+| **lamp** | they carry a light |
+
+Press **T** for command mode and the game becomes top-down army control: drag a
+box or tap a spot to order a **move**, **hold** or **attack**, filter the order
+to one role with **1–6**, **Y** to rally everyone back to you, **H** to make
+them hold where they stand.
+
 ### Upgrade chips
 
 Machines do not simply drop loot. When you destroy one it leaves a sparking
@@ -126,14 +223,19 @@ src/
   game.js          owns the world, entity lists, the wave director and the UI
   engine/          fixed-timestep loop, input, pixel renderer + camera,
                    5x7 bitmap font, WebAudio synth, pooled particles
-  art/             the pixel-drawing DSL and every sprite in the game:
-                   one parameterised critter rig drives the player, ten NPCs,
-                   eighteen animals and the poachers; separate builders for
-                   machines, flora, items and insects
+  art/             the pixel-drawing DSL and every sprite in the game: one
+                   parameterised critter rig drives the player, ten NPCs and
+                   the humans; a second, higher-detail beast rig drives all
+                   twenty-two wild species; separate builders for machines,
+                   flora, items, insects and the laboratory
   world/           value noise, tile definitions, procedural basin generation,
-                   chunked terrain rendering, and the fire simulation
+                   chunked terrain rendering, the fire simulation, and the
+                   hand-laid Les Nest facility
   entities/        player, bullets, enemies, NPCs, wildlife, pickups, hazards
-  systems/         resource/weapon/chip/recipe data, inventory, wave director
+  story/           cutscene timeline player, the eight-chapter campaign, and
+                   the scripted first defeat
+  systems/         resource/weapon/chip/recipe data, inventory, animal tools,
+                   squad orders, wave director
   ui/              HUD, dialogue bubbles, crafting/chip/map panels
 tools/             headless test harnesses (see below)
 ```
@@ -153,6 +255,18 @@ A few things worth knowing if you go reading:
   enemy pattern. Radial glow sprites are cached per (radius, colour) — building
   a `CanvasGradient` per bullet was the single biggest frame-rate cost in the
   game before that change.
+- **The internal resolution is not fixed.** `computeViewport` scores every
+  whole-number pixel scale against how much of the viewport it would cover and
+  picks the best one, so an iPad fills its screen instead of sitting in black
+  bars. `VIEW_W`/`VIEW_H` are live module bindings that everything reads each
+  frame, so a rotation just works.
+- **The lab is not generated.** The story needs to know exactly where your tank
+  is and which corridor the guard comes down, so `world/lab.js` lays the floor
+  plan by hand into the same `World` object the basin uses — same collision,
+  same chunk renderer, same draw list.
+- **The basin is not built until you need it.** The game boots into the
+  facility; the 340×280 basin (about 13,000 resource nodes and 660 animals) is
+  generated in ~200ms when the campaign hands over.
 
 ## Tests
 
@@ -163,10 +277,16 @@ npm start &                  # serve on :8080
 export URL=http://localhost:8080/index.html
 export ART_URL=http://localhost:8080/tools/artcheck.html
 
-npm test                     # 24 end-to-end checks: gathering, crafting, the
+npm test                     # end-to-end checks: gathering, crafting, the
                              # handover, recruiting, chip theft, rescues, waves,
                              # the burn, all three bosses, and a 50-enemy
                              # frame-rate floor
+npm run story                # plays the whole campaign: walks the tutorial,
+                             # runs the course, mashes out of the tank, fights
+                             # the rampage, flies the transport, lands
+npm run mobile               # four device viewports: phone, tablet, both
+                             # orientations — checks the picture fills the
+                             # screen and the thumbsticks land in reach
 npm run smoke                # boots, plays for a while, asserts no console errors
 npm run scenes               # magnified gameplay screenshots
 npm run artsheet             # contact sheet of every sprite in the game

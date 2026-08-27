@@ -34,6 +34,14 @@ export const HUD_RESOURCES = ['wood', 'stone', 'iron', 'sulfur', 'charcoal', 'sa
 
 // --- weapons ---------------------------------------------------------------
 export const WEAPONS = {
+  // Chapter one. No gun, no ammo — the fire button does nothing and the only
+  // thing you have is X.
+  claws: {
+    name: 'Claws', art: 'popper', sfx: 'hit',
+    damage: 0, rof: 99, speed: 1, count: 0, spread: 0, ammo: 0,
+    bullet: 'pellet', range: 0.1, knock: 0, meleeOnly: true,
+    desc: 'What they left you with.',
+  },
   popper: {
     name: 'Pine Popper', art: 'popper', sfx: 'shoot',
     damage: 7, rof: 0.22, speed: 250, count: 1, spread: 0.05, ammo: 0,
@@ -180,5 +188,16 @@ export const RECIPES = [
     desc: 'Carry more water. You will want it.',
   },
 ];
+
+// Animal kit. Built like anything else, then fitted by walking up to a bonded
+// animal and pressing E.
+import { TOOLS, TOOL_KEYS } from './tools.js';
+for (const k of TOOL_KEYS) {
+  const t = TOOLS[k];
+  RECIPES.push({
+    id: 'tool_' + k, name: t.name, station: t.station, category: 'tool',
+    cost: t.cost, give: { tool: k }, repeatable: 99, desc: t.desc,
+  });
+}
 
 export function recipeById(id) { return RECIPES.find(r => r.id === id) || null; }

@@ -1,0 +1,45 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>beasts</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#1a2418}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import { BEASTS, BEAST_KEYS } from '../src/art/beastiary.js';
+import { beastFrames, beastSize } from '../src/art/animals.js';
+import { drawText } from '../src/engine/font.js';
+
+const SCALE = 3, W = 560, H = 900;
+const c = document.getElementById('c');
+c.width = W * SCALE; c.height = H * SCALE;
+const ctx = c.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+ctx.scale(SCALE, SCALE);
+ctx.fillStyle = '#1a2418'; ctx.fillRect(0, 0, W, H);
+
+let y = 8;
+for (const key of BEAST_KEYS) {
+  const b = BEASTS[key];
+  const sz = beastSize(b.cfg);
+  drawText(ctx, b.name.toUpperCase() + '  [' + b.temper + ' / ' + b.role + ']', 4, y, '#8ac47a');
+  y += 9;
+  let x = 6;
+  // one still per pose, then a walk strip
+  for (const anim of ['idle', 'alert', 'graze', 'walk', 'run']) {
+    const f = beastFrames(key, b.cfg, anim, 'front', 8);
+    const n = (anim === 'walk' || anim === 'run') ? 4 : 1;
+    for (let i = 0; i < n; i++) {
+      const img = f[Math.floor(i * f.length / n)];
+      if (x + img.width + 3 > W) { break; }
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(x - 1, y - 1, img.width + 2, img.height + 2);
+      ctx.drawImage(img, x, y);
+      x += img.width + 3;
+    }
+    x += 4;
+  }
+  const back = beastFrames(key, b.cfg, 'walk', 'back', 8);
+  if (x + back[2].width + 3 < W) { ctx.drawImage(back[2], x, y); x += back[2].width + 3; }
+  y += sz.h + 6;
+  if (y > H - 60) break;
+}
+document.title = 'beasts H=' + Math.ceil(y + 10);
+window.__done = true;
+</script></body></html>

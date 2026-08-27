@@ -183,6 +183,10 @@ export class Bullets {
         if (hit === 'consumed') continue;
       } else {
         const p = game.player;
+        // Claws first: a shot met by an active guard is turned around before
+        // it ever gets a chance to be a hit.
+        if (!p.dead && p.parryActive && p.tryParry(b, game)) continue;
+        if (!p.dead) p.tryGraze(b, game);
         if (!p.dead && p.invuln <= 0 && dist2(b.x, b.y, p.x, p.y - 7) < (b.radius + p.hitR) * (b.radius + p.hitR)) {
           p.damage(b.damage, game);
           this._expire(b, game);

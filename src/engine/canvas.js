@@ -4,8 +4,43 @@
 
 import { clamp, damp, snap } from './math.js';
 
-export const VIEW_W = 480;
-export const VIEW_H = 270;
+// Internal resolution. These are LIVE module bindings: `resize()` reassigns
+// them so the game fills whatever screen it lands on — a 16:9 monitor, a 4:3
+// iPad, a phone held sideways — instead of letterboxing a fixed 480x270 box.
+export let VIEW_W = 480;
+export let VIEW_H = 270;
+
+// Roughly how many CSS pixels one game pixel should occupy. Bigger = chunkier
+// art and less world on screen; this is the knob that keeps sprites readable on
+// a small phone and stops a 4K monitor from showing half the map.
+const TARGET_PX = 260;
+const MIN_H = 170, MAX_H = 380;
+const MIN_W = 240, MAX_W = 660;
+
+const evenDown = (v) => Math.max(2, Math.floor(v / 2) * 2);
+
+/**
+ * Pick an internal resolution and an integer upscale for the current window.
+ * Tries every whole scale and keeps the one that covers the most screen while
+ * staying near the target pixel size, so a 4:3 iPad fills edge to edge instead
+ * of floating in a letterbox.
+ */
+export function computeViewport(availW, availH) {
+  const ideal = Math.max(1, availH / TARGET_PX);
+  let best = null;
+  for (let scale = 1; scale <= 10; scale++) {
+    const w = evenDown(Math.min(availW / scale, MAX_W));
+    const h = evenDown(Math.min(availH / scale, MAX_H));
+    if (w < MIN_W || h < MIN_H) continue;
+    const coverage = (w * scale * h * scale) / (availW * availH);
+    const sizePenalty = Math.abs(Math.log2(scale / ideal)) * 0.12;
+    const score = coverage - sizePenalty;
+    if (!best || score > best.score) best = { w, h, scale, score };
+  }
+  // Nothing fit the minimums (a very small window): fall back to 1:1.
+  if (!best) best = { w: evenDown(Math.max(MIN_W, availW)), h: evenDown(Math.max(MIN_H, availH)), scale: 1, score: 0 };
+  return best;
+}
 
 export class Camera {
   constructor() {
@@ -78,19 +113,44 @@ export class Renderer {
     this.glowCtx = gl.ctx;
 
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    const onResize = () => this.resize();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onResize);
+      window.visualViewport.addEventListener('scroll', onResize);
+    }
   }
 
   resize() {
-    // Integer scale so pixels stay square and crisp; fall back to fractional
-    // only on screens too small for 1x.
-    const availW = window.innerWidth, availH = window.innerHeight;
-    let scale = Math.min(availW / VIEW_W, availH / VIEW_H);
-    scale = scale >= 1 ? Math.floor(scale) : scale;
-    this.canvas.style.width = Math.round(VIEW_W * scale) + 'px';
-    this.canvas.style.height = Math.round(VIEW_H * scale) + 'px';
-    this.scale = scale;
+    // The visual viewport is what actually matters on iOS, where the browser
+    // chrome and the on-screen keyboard shrink the usable area.
+    const vv = window.visualViewport;
+    const availW = Math.round(vv ? vv.width : window.innerWidth);
+    const availH = Math.round(vv ? vv.height : window.innerHeight);
+    const v = computeViewport(availW, availH);
+
+    if (v.w !== VIEW_W || v.h !== VIEW_H) {
+      VIEW_W = v.w; VIEW_H = v.h;
+      this.canvas.width = VIEW_W;
+      this.canvas.height = VIEW_H;
+      this.ctx.imageSmoothingEnabled = false;
+      // The compositing buffers have to match the new size.
+      const lm = makeCanvas(VIEW_W, VIEW_H);
+      this.lightCanvas = lm.canvas; this.lightCtx = lm.ctx;
+      const gl = makeCanvas(VIEW_W, VIEW_H);
+      this.glowCanvas = gl.canvas; this.glowCtx = gl.ctx;
+      if (this.onResize) this.onResize(VIEW_W, VIEW_H);
+    }
+
+    // computeViewport already guaranteed this scale fits.
+    this.scale = v.scale;
+    this.canvas.style.width = (VIEW_W * v.scale) + 'px';
+    this.canvas.style.height = (VIEW_H * v.scale) + 'px';
   }
+
+  get width() { return VIEW_W; }
+  get height() { return VIEW_H; }
 
   beginFrame(skyColor) {
     const c = this.ctx;

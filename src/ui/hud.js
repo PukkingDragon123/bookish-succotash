@@ -51,6 +51,23 @@ export class Hud {
     const ctx = r.ctx;
     const p = game.player;
 
+    // On touch the thumb clusters own the bottom corners, so the readouts move
+    // out from under them.
+    this.touch = game.input.touch.visible;
+    this.resY = this.touch ? 58 : VIEW_H - 14;
+    this.squadY = this.touch ? 82 : 70;
+
+    // Inside the facility you have no inventory, no squad and no waves — the
+    // HUD shrinks to the two things that still matter.
+    if (game.mode === 'lab') {
+      this.drawVitals(r, ctx, p, game);
+      if (game.campaign && game.campaign.hasGun) this.drawWeapon(r, ctx, p, game);
+      this.drawToasts(r, ctx, game);
+      this.drawAnnounce(r, ctx, game);
+      this.drawCombo(r, ctx, game);
+      return;
+    }
+
     this.drawVitals(r, ctx, p, game);
     this.drawWood(r, ctx, p, game);
     this.drawResources(r, ctx, p, game);
@@ -62,6 +79,21 @@ export class Hud {
     this.drawAnnounce(r, ctx, game);
     this.drawPrompt(r, ctx, game);
     this.drawSquad(r, ctx, game);
+    this.drawCombo(r, ctx, game);
+  }
+
+  /** Parry/graze chain. Only shows while it is actually paying you. */
+  drawCombo(r, ctx, game) {
+    const p = game.player;
+    if (p.combo <= 0 || p.comboT <= 0) return;
+    const cx = VIEW_W / 2;
+    const y = 54;
+    const bonus = Math.round(Math.min(0.6, 0.12 * p.combo) * 100);
+    const a = clamp(p.comboT / 0.6, 0, 1);
+    ctx.globalAlpha = a;
+    drawText(ctx, 'x' + p.combo, cx, y, P.sulfurHi, { align: 'center', scale: 2, shadow: '#000' });
+    drawText(ctx, '+' + bonus + '% DAMAGE', cx, y + 16, P.uiDim, { align: 'center', shadow: true });
+    ctx.globalAlpha = 1;
   }
 
   // --- health / energy / dash / chips --------------------------------------
@@ -135,7 +167,7 @@ export class Hud {
   // --- compact resource row -------------------------------------------------
   drawResources(r, ctx, p, game) {
     let x = 6;
-    const y = VIEW_H - 14;
+    const y = this.resY;
     for (const key of HUD_RESOURCES) {
       const n = p.inv.get(key);
       if (n <= 0 && !['wood', 'ammo', 'gunpowder'].includes(key)) continue;
@@ -153,7 +185,8 @@ export class Hud {
   // --- weapon + ammo --------------------------------------------------------
   drawWeapon(r, ctx, p, game) {
     const w = p.weapon;
-    const bx = VIEW_W - 92, by = VIEW_H - 26;
+    const bx = this.touch ? Math.round(VIEW_W / 2 - 43) : VIEW_W - 92;
+    const by = VIEW_H - 26;
     r.panel(bx, by, 86, 22);
     const img = weaponSprite(w.art);
     ctx.drawImage(img, bx + 3, by + 5);
@@ -180,6 +213,17 @@ export class Hud {
   drawWaveBanner(r, ctx, game) {
     const d = game.director;
     const cx = VIEW_W / 2;
+    // The director is on hold until the first fight is over; showing a wave
+    // countdown that is not running would just be a lie.
+    const stand = game.firstStand;
+    if (stand && !stand.finished) {
+      if (!stand.active) {
+        drawText(ctx, 'SURVEY TEAM INBOUND', cx, 6, P.uiWarn, { align: 'center', shadow: '#000' });
+        const t = Math.max(0, game.standDelay);
+        drawText(ctx, '0:' + String(Math.floor(t)).padStart(2, '0'), cx, 15, t < 6 ? P.uiBad : P.uiDim, { align: 'center', shadow: '#000' });
+      }
+      return;
+    }
     if (d.phase === PHASE.PREP) {
       const t = d.timer;
       const urgent = t <= 10;
@@ -249,7 +293,7 @@ export class Hud {
 
   // --- toasts & announcements ----------------------------------------------
   drawToasts(r, ctx, game) {
-    let y = VIEW_H - 44;
+    let y = VIEW_H - (this.touch ? 44 : 44);
     for (let i = this.toasts.length - 1; i >= 0; i--) {
       const t = this.toasts[i];
       const a = clamp(t.life / 0.4, 0, 1);
@@ -296,7 +340,7 @@ export class Hud {
   drawSquad(r, ctx, game) {
     const squad = game.npcs.filter(n => n.recruited);
     if (squad.length === 0) return;
-    let y = 70;
+    let y = this.squadY;
     for (const n of squad) {
       const down = n.downT > 0;
       drawText(ctx, n.name, 6, y, down ? P.uiBad : P.uiDim, { shadow: true });

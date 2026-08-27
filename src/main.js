@@ -14,9 +14,9 @@ export async function boot() {
   const seedParam = params.get('seed');
   const seed = seedParam ? (parseInt(seedParam, 36) || parseInt(seedParam, 10) || 1) : (Math.random() * 0xffffffff) >>> 0;
 
-  msgEl.textContent = 'Generating the basin…';
-  // Yield once so the browser paints the loading text before we block on
-  // worldgen (a couple of hundred thousand noise samples).
+  msgEl.textContent = 'Warming up the facility…';
+  // Yield once so the browser paints the loading text before we block on the
+  // first big batch of sprite baking.
   await new Promise(r => setTimeout(r, 30));
 
   const t0 = performance.now();
@@ -28,7 +28,9 @@ export async function boot() {
     if (e.code === 'F1') { game.showFps = !game.showFps; e.preventDefault(); }
   });
 
-  msgEl.textContent = `Basin ${seed.toString(36)} generated in ${genMs}ms — ${game.world.nodes.length} resource nodes, ${game.wildlife.animals.length} animals, ${game.npcs.length} neighbours.`;
+  // The basin itself is not generated until the story hands over, so all this
+  // stage has to load is Block C.
+  msgEl.textContent = `Les Nest facility ready in ${genMs}ms. Basin seed ${seed.toString(36)}.`;
   btn.classList.remove('hidden');
 
   const begin = () => {

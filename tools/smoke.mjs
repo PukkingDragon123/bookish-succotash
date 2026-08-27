@@ -3,16 +3,30 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 
-async function enterGame(page) {
+async function enterGame(page, opts = {}) {
   await page.waitForSelector('#startbtn:not(.hidden)', { timeout: 60000 });
   await page.click('#startbtn');
   await page.waitForTimeout(400);
   const box = await (await page.$('#screen')).boundingBox();
+  // The title screen is a menu now. Take the second entry, STRAIGHT TO THE
+  // BASIN, so the harness lands in the survival game rather than the lab.
   for (let i = 0; i < 12; i++) {
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await page.waitForTimeout(250);
-    const st = await page.evaluate(() => window.game && window.game.state);
-    if (st === 'play') return box;
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(80);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const st = await page.evaluate(() => window.game && ({ state: window.game.state, mode: window.game.mode }));
+    if (st && st.state === 'play' && st.mode === 'forest') {
+      if (opts.keepFirstStand !== true) {
+        // The scripted first defeat holds the wave director back for about a
+        // minute. Tests that care about waves skip past it on purpose.
+        await page.evaluate(() => {
+          if (window.game.firstStand) window.game.firstStand.skip(window.game);
+        });
+      }
+      await page.waitForTimeout(200);
+      return box;
+    }
   }
   throw new Error('could not leave the title screen');
 }

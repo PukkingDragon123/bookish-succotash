@@ -1,6 +1,8 @@
 // Keyboard + mouse + gamepad input. Exposes edge-triggered "pressed" queries so
 // gameplay code never has to track previous frames itself.
 
+import { TouchControls, isTouchDevice } from './touch.js';
+
 const KEYMAP = {
   up:      ['KeyW', 'ArrowUp'],
   down:    ['KeyS', 'ArrowDown'],
@@ -17,6 +19,12 @@ const KEYMAP = {
   pause:   ['Escape', 'KeyP'],
   use:     ['KeyF'],
   smoke:   ['KeyG'],
+  melee:   ['KeyX'],
+  command: ['KeyT'],
+  rally:   ['KeyY'],
+  hold:    ['KeyH'],
+  weapon:  ['KeyB'],
+  fullscreen: ['F11'],
   slot1:   ['Digit1'],
   slot2:   ['Digit2'],
   slot3:   ['Digit3'],
@@ -33,6 +41,8 @@ export class Input {
     this.mouse = { x: 0, y: 0, sx: 0, sy: 0, down: false, pressed: false, released: false, rdown: false, rpressed: false };
     this.wheel = 0;
     this.anyKeyPressed = false;
+    this.touch = new TouchControls(canvas);
+    this.usingTouch = isTouchDevice();
     this._bind();
   }
 
@@ -67,19 +77,8 @@ export class Input {
     });
     window.addEventListener('wheel', (e) => { this.wheel += Math.sign(e.deltaY); }, { passive: true });
 
-    // Touch: drag anywhere to aim + fire. Good enough to poke at on a tablet.
-    cv.addEventListener('touchstart', (e) => {
-      const t = e.changedTouches[0];
-      this._movePointer(t.clientX, t.clientY);
-      this.mouse.down = true; this.mouse.pressed = true; this.anyKeyPressed = true;
-      e.preventDefault();
-    }, { passive: false });
-    cv.addEventListener('touchmove', (e) => {
-      const t = e.changedTouches[0];
-      this._movePointer(t.clientX, t.clientY);
-      e.preventDefault();
-    }, { passive: false });
-    cv.addEventListener('touchend', (e) => { this.mouse.down = false; this.mouse.released = true; e.preventDefault(); }, { passive: false });
+    // Touch is handled by TouchControls, which owns the pointer events and
+    // feeds results back through the same action queries used below.
   }
 
   _movePointer(clientX, clientY) {
@@ -90,22 +89,37 @@ export class Input {
 
   // --- queries -------------------------------------------------------------
   isDown(action) {
+    if (this.touch.isDown(action)) return true;
     const keys = KEYMAP[action];
     if (!keys) return false;
     for (const k of keys) if (this.down.has(k)) return true;
     return false;
   }
   isPressed(action) {
+    if (this.touch.isPressed(action)) return true;
     const keys = KEYMAP[action];
     if (!keys) return false;
     for (const k of keys) if (this.pressed.has(k)) return true;
     return false;
   }
   isReleased(action) {
+    if (this.touch.isReleased(action)) return true;
     const keys = KEYMAP[action];
     if (!keys) return false;
     for (const k of keys) if (this.released.has(k)) return true;
     return false;
+  }
+
+  /** Unit aim direction when a stick is driving, else null (mouse aiming). */
+  aimVector() { return this.touch.aimVector(); }
+
+  /** True when the player is asking to shoot, by mouse or by right stick. */
+  get firing() { return this.mouse.down || this.touch.firing; }
+
+  /** A screen-space tap that menus and panels can consume. */
+  takeTap() {
+    if (this.mouse.pressed) return { x: this.mouse.sx, y: this.mouse.sy };
+    return this.touch.takeTap();
   }
   key(code) { return this.down.has(code); }
   keyPressed(code) { return this.pressed.has(code); }
@@ -119,6 +133,8 @@ export class Input {
     if (this.isDown('down')) y += 1;
     const gp = this._gamepadAxes();
     if (gp) { x += gp.x; y += gp.y; }
+    const t = this.touch.axes();
+    if (t) { x += t.x; y += t.y; }
     const len = Math.hypot(x, y);
     if (len > 1) { x /= len; y /= len; }
     return { x, y, len: Math.min(len, 1) };
@@ -138,6 +154,7 @@ export class Input {
 
   // Called once at the very end of each frame.
   endFrame() {
+    this.touch.endFrame();
     this.pressed.clear();
     this.released.clear();
     this.mouse.pressed = false;

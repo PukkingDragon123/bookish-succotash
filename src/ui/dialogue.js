@@ -4,6 +4,7 @@
 
 import { drawText, measure, wrapText, LINE_H } from '../engine/font.js';
 import { P } from '../art/palette.js';
+import { VIEW_W, VIEW_H } from '../engine/canvas.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 
@@ -84,8 +85,8 @@ export class Dialogue {
     const anchorY = npc.y - (npc.h || 20) - 10 - cam.oy;
     let bx = Math.round(anchorX - bw / 2);
     let by = Math.round(anchorY - bh);
-    bx = clamp(bx, 4, 480 - bw - 4);
-    by = clamp(by, 22, 270 - bh - 40);
+    bx = clamp(bx, 4, VIEW_W - bw - 4);
+    by = clamp(by, 22, VIEW_H - bh - 40);
 
     ctx.globalAlpha = alpha;
     r.uiRect(bx, by, bw, bh, small ? 'rgba(9,16,13,0.78)' : 'rgba(9,16,13,0.93)');
