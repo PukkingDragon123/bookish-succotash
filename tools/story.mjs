@@ -50,7 +50,7 @@ const snap = () => page.evaluate(() => {
     objective: c && c.objective, stage: c && c.rampageStage, hasGun: c && c.hasGun,
     x: Math.round(g.player.x), y: Math.round(g.player.y), hp: Math.round(g.player.hp),
     enemies: g.enemies.length, bullets: g.bullets.count, fps: g.loop.fps,
-    exhaustion: c ? Math.round(c.exhaustionPeak) : -1, gates: c && c.gatesPassed,
+    exhaustion: c ? Math.round(c.exhaustionPeak) : -1, gates: c && c.gatesPassed, lap: c && c.lap,
     heliHp: c && c.heli ? Math.round(c.heli.hp) : null,
     prompt: c && c.cut && c.cut.prompt ? c.cut.prompt.kind : null,
     daxDead: c && c.dax ? c.dax.dead : null,
@@ -176,8 +176,16 @@ const marks = await page.evaluate(() => {
   const m = window.game.campaign.marks;
   return { cage: m.cage, dish: m.dish, corridor: m.corridor, surgery: m.surgery, security: m.security, helipad: m.helipad, glass: m.cageGlass };
 });
-await walkTo(marks.cage.x + 26, marks.cage.y, 22000, { within: 14 });
-const gotCourse = await waitFor(s => s.chapter === 'course', 45000, 'course');
+await walkTo(marks.cage.x + 26, marks.cage.y, 26000, { within: 14 });
+// The arrival scene is long and deliberate. Tap through it the way a player
+// who has already seen it once would.
+const tapT0 = Date.now();
+while (Date.now() - tapT0 < 90000) {
+  if ((await snap()).chapter !== 'cage') break;
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(160);
+}
+const gotCourse = await waitFor(s => s.chapter === 'course', 30000, 'course');
 check('cage chapter hands over to the course', gotCourse, (await snap()).chapter);
 
 // chapter 2: a sustained run is what tires you, so hold one direction first
@@ -188,7 +196,15 @@ const tired = await snap();
 check('running the course tires you out', tired.exhaustion > 25, 'peak exhaustion=' + tired.exhaustion);
 check('exhaustion slows you down', await page.evaluate(() => window.game.player.speedMult < 1),
   'speedMult=' + (await page.evaluate(() => window.game.player.speedMult.toFixed(2))));
+// Two laps: he withholds the food after the first one on purpose, teleports
+// you back to the gate, and makes you run it again.
 await walkTo(marks.dish.x, marks.dish.y, 70000, { within: 22 });
+const denied = await waitFor(s => s.lap === 2 || s.chapter !== 'course', 20000);
+check('the first lap is for nothing', denied, 'lap ' + (await snap()).lap);
+await page.waitForTimeout(2500);
+if ((await snap()).chapter === 'course') {
+  await walkTo(marks.dish.x, marks.dish.y, 70000, { within: 22 });
+}
 const gotPlan = await waitFor(s => s.chapter === 'plan' || s.chapter === 'break', 25000);
 check('eating the food starts the escape plan', gotPlan, (await snap()).chapter);
 

@@ -56,14 +56,22 @@ export class Actor {
     this.alpha = 1;
     this.rot = 0;
     this.key = opts.key || 'actor';
-    const s = kind === 'beast' ? beastSize(cfg) : critterSize(cfg);
-    this.w = s.w; this.h = s.h;
+    if (kind === 'prop') {
+      this.propKind = opts.prop || cfg;
+      const img = labProp(this.propKind, 0);
+      this.w = img ? img.width : 16;
+      this.h = img ? img.height : 16;
+    } else {
+      const s = kind === 'beast' ? beastSize(cfg) : critterSize(cfg);
+      this.w = s.w; this.h = s.h;
+    }
     this.r = 6;
     this.target = null;
     this.speed = opts.speed || 0;
   }
 
   frames(anim, view) {
+    if (this.kind === 'prop') return [labProp(this.propKind || this.cfg, 0)];
     return this.kind === 'beast'
       ? beastFrames('a:' + this.key, this.cfg, anim, view, 8)
       : critterFrames('a:' + this.key, this.cfg, anim, view, 8);
@@ -91,6 +99,13 @@ export class Actor {
 
   draw(r, game) {
     if (this.dead && this.anim !== 'dead') return;
+    if (this.kind === 'prop') {
+      const img = labProp(this.talking ? (this.propKindTalk || this.propKind) : this.propKind, 0);
+      if (!img) return;
+      r.shadow(this.x, this.y, this.w * 0.4, 3, 0.36);
+      r.draw(img, this.x - img.width / 2, this.y - img.height + 2, false, this.alpha);
+      return;
+    }
     const fr = this.frames(this.anim, this.view);
     let img = fr[Math.floor(this.animT * fr.length) % fr.length];
     if (this.hurtT > 0 && Math.floor(this.hurtT * 30) % 2 === 0) {
@@ -122,6 +137,14 @@ export class Campaign {
     this.heli = null;
     this.objective = '';
     this.waypoint = null;     // { x, y, label } — drawn as a marker and an arrow
+    this.readT = 0;           // how long a terminal's text stays up
+    this.readLines = null;
+    this.crawl = null;        // { t, from, to } — mid-duct
+    this.ventsUsed = 0;
+    this.lockersForced = 0;
+    this.jarsRead = 0;
+    this.lap = 1;
+    this.chipFrom = 'IMPLANT';
     this.blockPlayer = true;
     this.finished = false;
   }
@@ -239,32 +262,105 @@ export class Campaign {
       beat.say('DAX', "Name's Dax. Tank nine. Been counting the ceiling tiles for two years.", 4),
       beat.clearLine(),
       beat.do(() => { this.objective = 'WALK TO THE GLASS  -  HE IS IN THE NEXT TANK'; }),
-      // The tank is five tiles across. All "walk to the glass" can mean is
-      // getting off the back wall and pressing your face to the pane.
       beat.until((game) => game.player.x > this.marks.cage.x + 20, 18),
       beat.say('DAX', "There you are. Look at that eye. They really did a number on you.", 3.6),
       beat.say('DAX', "Listen. They'll come for the course in a minute. Run it. Eat. Get strong.", 4),
-      beat.say('DAX', "Because I have been working on something, and I am going to need you strong.", 4.2),
-      beat.clearLine(),
-      beat.do(() => this.spawnTechnician()),
-      beat.wait(1.6),
-      beat.say('TECHNICIAN', "Forty-one. Course. Move.", 2.4, P.nestSteelHi),
-      beat.do(() => {
-        // open the pane between the tank and the block
-        const m = this.marks.cage;
-        for (let ty = m.ty - 1; ty <= m.ty + 1; ty++) g.world.setTile(m.tx + 3, ty, T.LAB_DARK);
-        audio.play('metal', { vol: 0.8 });
+      beat.say('DAX', "Because I have been working on something, and I am going to need you—", 3.4),
+
+      // --- the lights go ---------------------------------------------------
+      beat.do((game) => {
+        audio.play('metal', { vol: 0.9, pitch: 0.5 });
+        game.labDark = 1;
+        game.r.camera.addShake(2);
       }),
+      beat.clearLine(),
+      beat.wait(1.4),
+      beat.say('DAX', "...oh no.", 1.6, P.uiWarn),
+      beat.wait(1.2),
+      beat.say('DAX', "Don't look at him. Forty-one. Do not look at him.", 3, P.uiWarn),
+      beat.clearLine(),
+      // you hear it before you see it
+      beat.do(() => { audio.play('ui', { vol: 0.3, pitch: 0.4 }); }),
+      beat.wait(0.8),
+      beat.sfx('metal', 0.35),
+      beat.wait(0.9),
+      beat.sfx('metal', 0.45),
+      beat.wait(0.7),
+      beat.do((game) => { this.spawnVane(game); game.r.camera.follow(this.marks.cage.x + 60, this.marks.cage.y); }),
+      beat.wait(3.2),
+      beat.do((game) => { game.r.camera.follow(this.vane.x - 14, this.vane.y - 10); }),
+      beat.wait(1),
+
+      beat.say('VANE', "Forty-one.", 2, P.nestEye),
+      beat.say('VANE', "Do you know that you are the only one of these that has ever looked back at me?", 4.6, P.nestEye),
+      beat.say('VANE', "Six hundred and twelve days. Four hundred of them with my eye in your head.", 4.6, P.nestEye),
+      beat.do((game) => { game.hitFlash = Math.max(game.hitFlash, 0.35); audio.play('chip', { vol: 0.7 }); }),
+      beat.say('VANE', "It sees what you see. I have watched you sleep from a room four floors up.", 4.8, P.nestEye),
+      beat.clearLine(),
+      beat.wait(0.8),
+      beat.say('VANE', "They tell me you are refusing the course.", 3, P.nestEye),
+      beat.say('VANE', "So we will do what we did last month. You will run it. And you will not be fed.", 4.8, P.nestEye),
+      beat.say('VANE', "And then you will run it again, and we will see what you are actually made of.", 4.8, P.nestEye),
+      beat.clearLine(),
+      beat.wait(0.6),
+      beat.say('DAX', "She's a KIT. She was a kit when you took her—", 3.2, P.uiWarn),
+      beat.do((game) => {
+        // he does not argue. he presses a button on the arm of the chair.
+        audio.play('shieldbreak', { vol: 0.8 });
+        game.hitFlash = 1;
+        game.r.camera.addShake(7);
+        game.slowmo(0.35, 0.5);
+        particles.ring(this.dax.x, this.dax.y - 6, 3, 26, 0.4, P.nestEye, 2, true);
+        this.dax.hurtT = 0.8;
+      }),
+      beat.say('', 'TANK 9 - COMPLIANCE - LEVEL 2', 2.2, P.nestEye),
+      beat.wait(1.4),
+      beat.say('DAX', "...ngh. Fine. Fine.", 2, P.uiDim),
+      beat.clearLine(),
+      beat.say('VANE', "Better. Open forty-one's gate.", 2.8, P.nestEye),
+      beat.do((game) => {
+        const m = this.marks.cage;
+        for (let ty = m.ty - 1; ty <= m.ty + 1; ty++) game.world.setTile(m.tx + 3, ty, T.LAB_DARK);
+        audio.play('metal', { vol: 0.9 });
+        game.labDark = 0;
+      }),
+      beat.say('VANE', "Run, please.", 2.4, P.nestEye),
       beat.clearLine(),
       beat.do(() => this.startCourse()),
     ]);
   }
 
-  spawnTechnician() {
+  /**
+   * Aldous Vane arrives.
+   *
+   * Everything about the presentation is built to make him worse than a guard
+   * with a gun: the lights go first, then the room goes quiet, and then you
+   * hear the chair a long time before you see it. He never raises his voice
+   * and he never gets out of the chair. He does not need to.
+   */
+  spawnVane(game) {
     const m = this.marks.cage;
-    this.tech = new Actor('critter', HUMANS.scientist.cfg, m.x + 90, m.y - 40, { name: 'Technician', key: 'tech', facing: -1 });
-    this.actors.push(this.tech);
-    this.tech.moveTo(m.x + 40, m.y, 60);
+    this.vane = new Actor('prop', 'chair', m.x + 150, m.y - 34, { name: 'Vane', key: 'vane', prop: 'chair' });
+    this.vane.propKindTalk = 'chairTalk';
+    this.actors.push(this.vane);
+    this.vane.moveTo(m.x + 44, m.y - 12, 22);
+    this.vaneHere = true;
+    audio.setIntensity(0);
+  }
+
+  /** The chair's whine, kept up while he is on screen. */
+  updateVane(dt, game) {
+    const v = this.vane;
+    if (!v || v.dead) return;
+    v.talking = !!(this.cut && this.cut.line && /VANE/.test(this.cut.line.who || ''));
+    if (chance(dt * 3)) audio.play('ui', { vol: 0.06, pitch: 0.45 });
+    // the implant does not like him
+    if (chance(dt * 0.5)) {
+      particles.spawn({
+        x: game.player.x + rnd(-2, 2), y: game.player.y - 8, z: 2,
+        vx: 0, vy: 0, vz: 8, life: 0.4, size: 1, colors: [P.cyber], additive: true,
+      });
+    }
   }
 
   startCourse() {
@@ -272,11 +368,55 @@ export class Campaign {
     this.blockPlayer = false;
     this.exhaustion = 0;
     this.gatesPassed = 0;
+    this.lap = this.lap || 1;
     this.objective = 'RUN THE COURSE  -  REACH THE FOOD';
     this.waypoint = { x: this.marks.dish.x, y: this.marks.dish.y, label: 'FOOD' };
     this.cut = null;
-    this.game.hud.showAnnounce('THE COURSE', 'THEY FEED YOU IF YOU FINISH', P.nestTealHi, 3.2);
-    this.game.toast('WASD / LEFT THUMB TO MOVE  -  SPACE TO DASH', P.uiDim, 7);
+    const first = this.lap === 1;
+    this.game.hud.showAnnounce(
+      first ? 'THE COURSE' : 'AGAIN',
+      first ? 'HE IS WATCHING. HE WRITES IT DOWN.' : 'SECOND LAP. HE SAID HE WOULD.',
+      P.nestTealHi, 3.2);
+    if (first) this.game.toast('WASD / LEFT THUMB TO MOVE  -  SPACE TO DASH', P.uiDim, 7);
+    for (const g2 of this.marks.gates) g2.passed = false;
+    this.courseDone = false;
+  }
+
+  /**
+   * He said he would withhold it, and he does. The dish is there, you run the
+   * whole course for it, and it is empty — and then you run it again, because
+   * the alternative is not running it.
+   */
+  denyFood(game) {
+    const d = this.marks.dish;
+    this.lap = 2;
+    this.blockPlayer = true;
+    audio.play('deny', { vol: 1 });
+    game.hitFlash = 0.5;
+    game.r.camera.addShake(4);
+    // the dish visibly empties
+    for (const o of game.world.props) {
+      if (o.kind === 'dish') o.kind = 'dishEmpty';
+    }
+    this.play([
+      beat.do(() => { game.r.camera.follow(d.x, d.y); }),
+      beat.wait(1.2),
+      beat.say('', 'The dish is clean. Somebody washed it and put it back.', 4),
+      beat.wait(0.6),
+      beat.clearLine(),
+      beat.say('VANE', "Thirty-four seconds. That is your best time, and you did it hungry.", 4.6, P.nestEye),
+      beat.say('VANE', "Which tells me every figure I have been given for two years is soft.", 4.8, P.nestEye),
+      beat.say('VANE', "Again, please. From the gate.", 2.8, P.nestEye),
+      beat.clearLine(),
+      beat.do((g2) => {
+        g2.player.x = this.marks.courseStart.x;
+        g2.player.y = this.marks.courseStart.y;
+        if (g2.player.rig) g2.player.rig.reset(g2.player.x, g2.player.y);
+        this.exhaustion = 62;          // you do not get to rest between laps
+        this.blockPlayer = false;
+        this.startCourse();
+      }),
+    ]);
   }
 
   startPlan() {
@@ -498,18 +638,125 @@ export class Campaign {
   // ======================================================================
   //  update
   // ======================================================================
+  /**
+   * Everything in the building you can walk up to and press E on.
+   *
+   * The forest has its own interaction pass and it does not apply here: there
+   * is nothing to chop and nobody to trade with. What there is instead is
+   * paperwork nobody meant you to read, lockers nobody meant you to open, and
+   * ducts nobody thought a ferret could fit into.
+   */
+  updateInteract(dt, game) {
+    const p = game.player;
+    if (this.crawl || this.blockPlayer) { game.prompt = null; return; }
+    let best = null, bestD = 1e9;
+    for (const o of game.world.props) {
+      if (!o.interactive || o.spent) continue;
+      const d = dist2(p.x, p.y, o.x, o.y - 6);
+      if (d < 26 * 26 && d < bestD) { bestD = d; best = o; }
+    }
+    game.prompt = best
+      ? { kind: 'lab', obj: best, label: best.label, x: best.x, y: best.y - 26 }
+      : null;
+    if (best && game.input.isPressed('interact')) this.useProp(best, game);
+  }
+
+  /** Act on whatever the prompt was pointing at. */
+  useProp(o, game) {
+    const p = game.player;
+    switch (o.use) {
+      case 'read':
+      case 'jar':
+        this.readLines = (o.text || '').split('\n');
+        this.readT = 6 + this.readLines.length * 0.8;
+        audio.play('scan', { vol: 0.5 });
+        if (o.use === 'jar') { this.jarsRead++; game.hitFlash = Math.max(game.hitFlash, 0.2); }
+        o.readOnce = true;
+        break;
+      case 'locker': {
+        o.spent = true;
+        o.kind = 'labCrate';
+        this.lockersForced++;
+        audio.play('metal', { vol: 0.8 });
+        game.r.camera.addShake(2);
+        particles.burst(o.x, o.y - 8, 8, { colors: [P.nestSteelHi || '#9fb4bb', '#5c6470'], speed: 70, life: 0.5, vz: 60 });
+        const n = o.loot === 'ammo' ? 18 : o.loot === 'meds' ? 2 : 4;
+        game.pickups.drop('resource', o.loot, o.x, o.y - 2, { count: n, vz: 110 });
+        game.toast('FORCED  -  ' + n + ' ' + String(o.loot).toUpperCase(), P.uiGood, 2.4);
+        break;
+      }
+      case 'vent':
+        this.enterVent(o, game);
+        break;
+      default: break;
+    }
+  }
+
+  /**
+   * The ducts. You are forty centimetres of spine; the building is full of
+   * pipes that are wider than you. Nobody at Les Nest costed that in.
+   */
+  enterVent(o, game) {
+    const link = this.marks.vents[o.vent];
+    if (!link) return;
+    const to = o.end === 'a' ? link.b : link.a;
+    this.crawl = { t: 0, total: 2.2, from: { x: o.x, y: o.y }, to };
+    this.blockPlayer = true;
+    this.ventsUsed++;
+    game.player.vx = game.player.vy = 0;
+    audio.play('metal', { vol: 0.5, pitch: 1.4 });
+    game.toast('IN THE DUCT', P.cyberDim, 2);
+  }
+
+  updateCrawl(dt, game) {
+    const c = this.crawl;
+    c.t += dt;
+    const f = clamp(c.t / c.total, 0, 1);
+    const p = game.player;
+    if (f < 0.35) {
+      // squeezing in: the body goes in nose first and the tail follows
+      p.x += (c.from.x - p.x) * Math.min(1, dt * 8);
+      p.y += (c.from.y - p.y) * Math.min(1, dt * 8);
+      if (chance(dt * 22)) particles.dust(c.from.x + rnd(-4, 4), c.from.y, 1);
+    } else if (f < 0.62) {
+      // gone. the camera stays on the duct mouth and you hear her in the wall
+      p.x = -9999; p.y = -9999;
+      if (chance(dt * 14)) {
+        audio.play('step', { vol: 0.25, pitch: 1.8 });
+        const t2 = (f - 0.35) / 0.27;
+        const mx = lerp(c.from.x, c.to.x, t2), my = lerp(c.from.y, c.to.y, t2);
+        particles.dust(mx + rnd(-3, 3), my + rnd(-3, 3), 1);
+        game.r.camera.follow(mx, my);
+      }
+    } else {
+      p.x = c.to.x; p.y = c.to.y + 8;
+      if (p.rig) p.rig.reset(p.x, p.y);
+      if (chance(dt * 20)) particles.dust(c.to.x + rnd(-4, 4), c.to.y, 1);
+    }
+    if (f >= 1) {
+      this.crawl = null;
+      this.blockPlayer = false;
+      audio.play('metal', { vol: 0.4, pitch: 1.2 });
+      game.r.camera.addShake(1.5);
+    }
+  }
+
   update(dt, game) {
     this.t += dt;
     this.chipVoiceT = Math.max(0, this.chipVoiceT - dt);
+    this.readT = Math.max(0, this.readT - dt);
+    if (this.crawl) { this.updateCrawl(dt, game); return; }
+    this.updateInteract(dt, game);
 
     for (const a of this.actors) a.update(dt);
+    if (this.vane) this.updateVane(dt, game);
 
     if (this.cut) {
       const cut = this.cut;
       cut.update(dt, game);
       // A beat can start the next chapter, which replaces or clears this.cut
       // out from under us — always finish the frame on the one we ran.
-      if (game.input.isPressed('interact') && this.cut === cut) cut.skipLine();
+      if (game.input.isPressed('interact') && this.cut === cut) cut.skip();
       if (cut.done && this.cut === cut) this.cut = null;
     }
 
@@ -537,6 +784,20 @@ export class Campaign {
     if (this.exhaustion >= 99 && chance(dt * 1.2)) {
       game.toast('YOU ARE EXHAUSTED', P.uiWarn, 1.6);
     }
+    // He does not shout at you. He narrates, in a level voice, over the PA.
+    if (!this.cut && chance(dt * 0.11)) {
+      this.chip(pick(this.lap === 1 ? [
+        'VANE: GATE THREE. SHE IS FAVOURING THE LEFT FORELEG.',
+        'VANE: NOTE THE PACE. SHE IS NOT TIRED. SHE IS ANGRY.',
+        'VANE: MARK THAT. SHE LOOKED AT THE GALLERY.',
+        'VANE: NOBODY WRITE ANYTHING DOWN THAT I DO NOT SAY.',
+      ] : [
+        'VANE: SECOND LAP. SIX SECONDS OFF. GOOD.',
+        'VANE: SHE HAS NOT LOOKED AT THE DISH ONCE THIS LAP.',
+        'VANE: THIS IS THE PART I WANTED TO SEE.',
+        'VANE: KEEP THE DOORS SHUT UNTIL SHE FINISHES.',
+      ]), 4.5);
+    }
 
     // gates
     for (const g2 of this.marks.gates) {
@@ -547,6 +808,7 @@ export class Campaign {
     if (!this.courseDone && dist2(p.x, p.y, d.x, d.y) < 26 * 26) {
       this.courseDone = true;
       p.speedMult = 1;
+      if (this.lap === 1) { this.denyFood(game); return; }
       audio.play('coinup');
       particles.burst(d.x, d.y - 6, 16, { colors: ['#a97c46', '#c49a63'], speed: 70, life: 0.6, vz: 60 });
       game.hud.showAnnounce('YOU EAT', '', P.uiGood, 2.2);
@@ -572,14 +834,27 @@ export class Campaign {
         this.startHeli();
       }
     }
-    // the chip keeps talking
+    // The chip keeps talking, and so does he. His lines come over the PA in
+    // the same level voice he used through the glass, and he never once tells
+    // anyone to stop you — he tells them to record it.
     if (chance(dt * 0.06) && this.chipVoiceT <= 0) {
-      this.chip(pick([
+      const fromVane = chance(0.45);
+      this.chip(pick(fromVane ? [
+        'VANE (PA): SHE IS IN THE SOUTH CORRIDOR. NOBODY CLOSE THE DOORS.',
+        'VANE (PA): I WANT ALL OF THIS. EVERY CAMERA. DO NOT LOSE A SECOND OF IT.',
+        'VANE (PA): SHE IS NOT RUNNING FOR AN EXIT. I TOLD YOU SHE WOULD NOT.',
+        'VANE (PA): THAT IS FOUR HUNDRED DAYS OF WORK DOING EXACTLY WHAT IT WAS BUILT TO DO.',
+        'VANE (PA): DO NOT DAMAGE THE HEAD.',
+        'VANE (PA): SHE CAN HEAR ME. CAN YOU HEAR ME, FORTY-ONE?',
+      ] : [
         'THEIR ROUNDS ARE SLOWER THAN YOUR CLAWS. USE THAT.',
         'SIX HUNDRED AND TWELVE DAYS. I COUNTED THEM WITH YOU.',
         'DO NOT STOP IN THE OPEN.',
+        'THERE IS A DUCT ON THE WEST WALL. YOU ARE THE SHAPE OF A DUCT.',
         'I AM NOT A VOICE IN YOUR HEAD. I AM A PIECE OF THEIR HARDWARE THAT CHANGED SIDES.',
-      ]), 4);
+      ]), fromVane ? 5 : 4);
+      if (fromVane) this.chipFrom = 'VANE';
+      else this.chipFrom = 'IMPLANT';
     }
   }
 
@@ -676,7 +951,50 @@ export class Campaign {
     for (const a of this.actors) if (cam.visible(a.x, a.y, 60)) out.push(a);
   }
 
+  /**
+   * Lab lighting. In the dark the only things with any light on them are the
+   * things he wants you looking at, which is exactly how he runs the building.
+   */
+  drawLights(r, game) {
+    const cam = r.camera;
+    // strip lights over the walkways, so the rooms are not featureless
+    if ((game.labDark || 0) < 0.9) {
+      for (const o of game.world.props) {
+        if (!cam.visible(o.x, o.y, 70)) continue;
+        if (o.kind === 'terminal' || o.kind === 'console') r.light(o.x, o.y - 8, 34, 'rgba(120,220,225,0.5)', 0.5);
+        else if (o.kind === 'incinerator') r.light(o.x, o.y - 10, 44, 'rgba(255,150,70,0.75)', 0.8);
+        else if (o.kind === 'vat' || o.kind === 'jar') r.light(o.x, o.y - 6, 24, 'rgba(150,210,190,0.4)', 0.4);
+      }
+    }
+    // and him
+    const v = this.vane;
+    if (v && !v.dead && cam.visible(v.x, v.y, 90)) {
+      r.light(v.x, v.y - 20, 62, 'rgba(210,120,110,0.75)', 0.85);
+      r.light(v.x, v.y - 34, 22, 'rgba(255,120,110,0.9)', 1);
+    }
+  }
+
   drawWorld(r, game) {
+    // Ducts you can actually use, marked. A grille you have already been
+    // through stays lit, so the network reads as a network.
+    if (this.marks && this.marks.vents) {
+      for (const o of game.world.props) {
+        if (o.use !== 'vent' || !r.camera.visible(o.x, o.y, 40)) continue;
+        const near = dist2(game.player.x, game.player.y, o.x, o.y) < 60 * 60;
+        const pulse = 0.25 + Math.sin(game.time * 3 + o.x * 0.05) * 0.12;
+        r.ring(o.x, o.y - 6, 9, P.cyberDim, 1, near ? pulse + 0.3 : pulse);
+        if (near) {
+          // a hint of the far end, so you know a duct goes somewhere
+          const link = this.marks.vents[o.vent];
+          const to = o.end === 'a' ? link.b : link.a;
+          const a = Math.atan2(to.y - o.y, to.x - o.x);
+          for (let i = 1; i <= 3; i++) {
+            r.rect(o.x + Math.cos(a) * i * 5 - 1, o.y - 6 + Math.sin(a) * i * 5 - 1, 2, 2, P.cyberDim);
+          }
+        }
+      }
+    }
+
     // Where to go next. A diamond on the spot, an arrow at the screen edge
     // when it is somewhere off past the walls.
     const wp = this.waypoint;
@@ -722,6 +1040,20 @@ export class Campaign {
       drawText(ctx, 'TIRED', x - 24, y - 1, P.uiDim, { shadow: true });
       drawText(ctx, 'GATES ' + this.gatesPassed + '/' + this.marks.gates.length, x + w + 4, y - 1, P.uiDim, { shadow: true });
     }
+    // whatever you just read, held up long enough to actually read it
+    if (this.readT > 0 && this.readLines) {
+      const a = clamp(this.readT, 0, 1);
+      ctx.globalAlpha = a;
+      const w = Math.min(VIEW_W - 40, 300);
+      const h = this.readLines.length * 9 + 12;
+      const x = VIEW_W / 2 - w / 2, y = 26;
+      r.uiRect(x, y, w, h, 'rgba(6,14,16,0.92)');
+      r.uiStroke(x, y, w, h, P.nestTealHi);
+      r.uiRect(x, y, w, 1, P.nestTealHi);
+      this.readLines.forEach((l, i) => drawText(ctx, l, x + 6, y + 6 + i * 9, P.nestTealHi, { shadow: true }));
+      ctx.globalAlpha = 1;
+    }
+
     if (this.chipVoiceT > 0 && this.chipLine) {
       const a = clamp(this.chipVoiceT, 0, 1);
       ctx.globalAlpha = a;
@@ -729,9 +1061,10 @@ export class Campaign {
       const x = VIEW_W / 2 - w / 2, y = VIEW_H - 62;
       r.uiRect(x, y, w, 16, 'rgba(6,20,24,0.9)');
       r.uiStroke(x, y, w, 16, P.cyber);
-      r.uiRect(x, y, 3, 16, P.cyber);
-      drawText(ctx, 'IMPLANT', x + 6, y + 2, P.cyberDim, { shadow: true });
-      drawText(ctx, this.chipLine, x + 6, y + 9, P.cyber, { shadow: true });
+      r.uiRect(x, y, 3, 16, this.chipFrom === 'VANE' ? P.nestEye : P.cyber);
+      const who = this.chipFrom === 'VANE' ? 'PA' : 'IMPLANT';
+      drawText(ctx, who, x + 6, y + 2, this.chipFrom === 'VANE' ? P.nestEye : P.cyberDim, { shadow: true });
+      drawText(ctx, this.chipLine, x + 6, y + 9, this.chipFrom === 'VANE' ? P.nestEye : P.cyber, { shadow: true });
       ctx.globalAlpha = 1;
     }
     if (this.cut) this.cut.draw(r, game);

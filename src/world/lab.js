@@ -47,8 +47,24 @@ export function buildLab(world, seed = 1) {
   w.geysers.length = 0;
 
   const marks = {};
-  const P = (x, y, kind, extra = {}) =>
-    w.props.push(Object.assign({ x: x * TS + TS / 2, y: y * TS + TS, kind, type: 'labprop', variant: (rng() * 4) | 0 }, extra));
+  const P = (x, y, kind, extra = {}) => {
+    const o = Object.assign(
+      { x: x * TS + TS / 2, y: y * TS + TS, kind, type: 'labprop', variant: (rng() * 4) | 0 }, extra);
+    w.props.push(o);
+    return o;
+  };
+  // Something you can walk up to and press E on. `use` says what happens.
+  const I = (x, y, kind, use, label, extra = {}) =>
+    P(x, y, kind, Object.assign({ use, label, interactive: true }, extra));
+  marks.vents = [];
+  marks.terminals = [];
+  // A duct link. Ferrets are the shape of a pipe; the building is full of
+  // pipes; somebody at Les Nest did not think that through.
+  const VENT = (ax, ay, bx, by, note) => {
+    const a = P(ax, ay, 'vent', { vent: marks.vents.length, end: 'a', interactive: true, use: 'vent', label: 'CRAWL INTO THE DUCT' });
+    const b = P(bx, by, 'vent', { vent: marks.vents.length, end: 'b', interactive: true, use: 'vent', label: 'CRAWL INTO THE DUCT' });
+    marks.vents.push({ a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, note, open: false, propA: a, propB: b });
+  };
 
   // --- holding block (start) ---------------------------------------------
   // A long room of tanks. Yours is third from the left.
@@ -91,6 +107,26 @@ export function buildLab(world, seed = 1) {
   P(hx0 + 3, hy1 - 6, 'console');
   P(hx0 + 8, hy1 - 6, 'console');
   P(hx1 - 5, hy0 + 3, 'banner');
+  // the room you actually live in, dressed
+  P(hx0 + 2, hy0 + 2, 'pipes');
+  P(hx0 + 14, hy0 + 1, 'pipes');
+  P(hx1 - 12, hy1 - 3, 'pipes');
+  P(hx0 + 6, hy0 + 3, 'signHazard');
+  P(hx0 + 18, hy1 - 2, 'drain');
+  P(hx1 - 8, hy1 - 2, 'drain');
+  P(hx0 + 20, hy1 - 6, 'mopBucket');
+  P(hx0 + 12, hy0 + 5, 'specShelf');
+  I(hx0 + 5, hy1 - 6, 'terminal', 'read', 'READ THE TERMINAL', {
+    text: 'SUBJECT 41 - DAY 612\nAPPETITE: NORMAL. AGGRESSION: RISING.\nOPTIC INTEGRATION AT 96%. NO REJECTION.\nRECOMMEND: CONTINUE. VANE HAS ASKED FOR WEEKLY FIGURES.',
+  });
+  I(hx0 + 16, hy0 + 5, 'jar', 'jar', 'LOOK AT THE JAR', {
+    text: 'SUBJECT 12. MUSTELA NIGRIPES. TERMINATED DAY 40.\nThe label is printed. They print them in advance.',
+  });
+  I(hx0 + 25, hy0 + 5, 'jar', 'jar', 'LOOK AT THE JAR', {
+    text: 'SUBJECT 29. The tag says FAILED OPTIC. It is curled up\nthe way you curl up when the lights go out.',
+  });
+  // the first duct: your tank block to the corridor, if you can find the grille
+  VENT(hx0 + 2, cageY + 4, 20, 34, 'block C to the service run');
 
   // --- the course ---------------------------------------------------------
   // A testing maze east of the block. You run it for food, and it is tiring.
@@ -116,6 +152,17 @@ export function buildLab(world, seed = 1) {
   const dishX = cx1 - 3, dishY = Math.floor((cy0 + cy1) / 2);
   P(dishX, dishY, 'dish');
   marks.dish = { x: dishX * TS + TS / 2, y: dishY * TS + TS / 2 };
+  // the gallery: they watch this from behind glass and write it down
+  for (let i = 0; i < 4; i++) P(cx0 + 6 + i * 8, cy0 + 1, 'terminal');
+  P(cx0 + 2, cy0 + 2, 'signWay');
+  P(cx1 - 2, cy1 - 3, 'drain');
+  P(cx0 + 14, cy1 - 2, 'drain');
+  I(cx0 + 3, cy1 - 3, 'terminal', 'read', 'READ THE TERMINAL', {
+    text: 'COURSE TIMES, SUBJECT 41\nDAY 604: 41s.  DAY 607: 38s.  DAY 610: 36s.\nDAY 611: 51s. WITHHELD FOOD. DAY 612: PENDING.',
+  });
+  // second duct: the far end of the course into the security wing, which is
+  // the whole reason to bother running it well
+  VENT(cx1 - 2, cy0 + 2, 78, 44, 'course gallery to security');
 
   // --- corridor south -----------------------------------------------------
   const corrY0 = 32, corrY1 = 38;
@@ -125,6 +172,22 @@ export function buildLab(world, seed = 1) {
   P(24, corrY1 - 1, 'labDoorOpen');
   P(52, corrY0 + 2, 'locker');
   P(56, corrY0 + 2, 'locker');
+  P(12, corrY0 + 1, 'pipes');
+  P(30, corrY0 + 1, 'pipes');
+  P(46, corrY0 + 1, 'pipes');
+  P(64, corrY0 + 1, 'pipes');
+  P(80, corrY0 + 1, 'pipes');
+  P(18, corrY1 - 1, 'signWay');
+  P(44, corrY1 - 1, 'signWay');
+  P(70, corrY0 + 2, 'signHazard');
+  P(36, corrY1 - 1, 'drain');
+  P(60, corrY1 - 1, 'drain');
+  P(84, corrY0 + 2, 'mopBucket');
+  I(54, corrY0 + 2, 'locker', 'locker', 'FORCE THE LOCKER', { loot: 'ammo' });
+  I(58, corrY0 + 2, 'locker', 'locker', 'FORCE THE LOCKER', { loot: 'meds' });
+  I(34, corrY0 + 2, 'terminal', 'read', 'READ THE TERMINAL', {
+    text: 'FACILITY NOTICE\nDUCTWORK ACCESS PANELS ARE TO REMAIN SEALED.\nTHIS IS THE THIRD NOTICE. - FACILITIES',
+  });
   marks.corridor = { x: 40 * TS, y: 35 * TS };
 
   // --- surgery ------------------------------------------------------------
@@ -137,6 +200,28 @@ export function buildLab(world, seed = 1) {
   P(34, 46, 'console');
   P(34, 58, 'labCrate');
   P(16, 58, 'labCrate');
+  // the rest of it, which is worse than the tables
+  P(24, 46, 'gurney');
+  P(30, 56, 'gurney');
+  P(18, 47, 'ivStand');
+  P(26, 47, 'ivStand');
+  P(31, 51, 'ivStand');
+  P(12, 52, 'specShelf');
+  P(37, 52, 'specShelf');
+  P(22, 55, 'drain');
+  P(27, 55, 'drain');
+  P(15, 44, 'signHazard');
+  P(36, 61, 'incinerator');
+  P(12, 60, 'pipes');
+  P(30, 44, 'pipes');
+  I(16, 46, 'terminal', 'read', 'READ THE TERMINAL', {
+    text: 'PROCEDURE LOG - SUBJECT 41 - DAY 88\nOPTIC SEATED. SUBJECT CONSCIOUS THROUGHOUT PER PROTOCOL.\nANAESTHESIA INTERFERES WITH NERVE MAPPING.\nDURATION 6h 20m. SUBJECT DID NOT STOP.',
+  });
+  I(33, 47, 'jar', 'jar', 'LOOK AT THE JAR', {
+    text: 'It is an eye. It is not yours. Yours is still in your head,\nbehind the one they put in front of it.',
+  });
+  // third duct: surgery to the roof stair, the escape a technician would use
+  VENT(11, 44, 84, 46, 'surgery to the east stair');
   marks.surgery = { x: 24 * TS, y: 52 * TS };
   // this is where they did it to you
   for (let i = 0; i < 26; i++) {
@@ -152,6 +237,18 @@ export function buildLab(world, seed = 1) {
   P(70, 50, 'console');
   P(76, 58, 'labCrate'); P(72, 58, 'labCrate');
   P(gx1 - 4, gy0 + 4, 'banner');
+  P(62, 45, 'pipes');
+  P(50, 60, 'pipes');
+  P(66, 60, 'drain');
+  P(56, 52, 'drain');
+  P(48, 58, 'mopBucket');
+  P(74, 45, 'signHazard');
+  P(60, 61, 'signWay');
+  I(52, 46, 'locker', 'locker', 'FORCE THE LOCKER', { loot: 'ammo' });
+  I(56, 46, 'locker', 'locker', 'FORCE THE LOCKER', { loot: 'scrap' });
+  I(68, 50, 'terminal', 'read', 'READ THE TERMINAL', {
+    text: 'SECURITY BULLETIN\nIF THE ANIMAL IN BLOCK C IS OUT, IT WILL NOT RUN\nFOR AN EXIT. IT WILL COME HERE. - A. VANE',
+  });
   marks.security = { x: 64 * TS, y: 52 * TS };
 
   // --- roof access & helipad ---------------------------------------------
@@ -159,6 +256,11 @@ export function buildLab(world, seed = 1) {
   room(w, px0, py0, px1, py1, T.LAB_PAD);
   doorway(w, 64, gy1, 66, py0, T.LAB_FLOOR);
   marks.helipad = { x: 68 * TS, y: 68 * TS };
+  P(54, py0 + 2, 'signWay');
+  P(82, py0 + 2, 'signHazard');
+  P(58, py1 - 1, 'pipes');
+  P(78, py1 - 1, 'drain');
+  marks.props = w.props;
 
   w.base.set(w.tiles);
   w.den = { x: marks.cage.x, y: marks.cage.y, tx: marks.cage.tx, ty: marks.cage.ty };

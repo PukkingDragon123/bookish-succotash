@@ -65,6 +65,7 @@ export class Game {
     this.firstStand = null;
     this.standDelay = 0;
     this.camp = null;
+    this.labDark = 0;                // block-wide blackout, 0..1
     this.storyDone = false;
     this.time = 0;
     this.dayTime = 0.28;             // 0..1 through the day; starts mid-morning
@@ -289,9 +290,9 @@ export class Game {
     if (!lab) {
       this.updateInteraction();
       this.handleAbilityKeys();
-    } else {
-      this.prompt = null;
     }
+    // in the lab the campaign owns the prompt: it set one during its own
+    // update, and clobbering it here would wipe every terminal and duct
 
     this.bullets.update(sdt, this);
 
@@ -1417,6 +1418,7 @@ export class Game {
     const amb = this.state === STATE.TITLE ? 'rgb(74,86,94)' : this.ambientColor();
     if (amb) {
       r.clearLight(amb);
+      if (lab && this.campaign) this.campaign.drawLights(r, this);
       if (this.state === STATE.TITLE) {
         // Two strip lights, one over each tank. Everything else is corridor.
         const c = this.campaign.marks.cage, b = this.campaign.marks.beaverCage;
@@ -1469,8 +1471,16 @@ export class Game {
   }
 
   ambientColor() {
-    // Indoors it is always strip-lit dusk, whatever the clock says.
-    if (this.mode === 'lab') return 'rgb(126,142,150)';
+    // Indoors it is always strip-lit dusk, whatever the clock says — and when
+    // the block goes dark ahead of him, it goes almost black.
+    if (this.mode === 'lab') {
+      const d = this.labDark || 0;
+      if (d <= 0.01) return 'rgb(126,142,150)';
+      // Dark enough that he is the only thing you can see clearly, not so dark
+      // that you cannot see him at all.
+      const k = 1 - d * 0.54;
+      return `rgb(${Math.round(96 * k)},${Math.round(112 * k)},${Math.round(134 * k + d * 26)})`;
+    }
     const n = this.nightFactor;
     const fire = this.fire.intensity;
     if (n < 0.03 && fire < 0.03) return null;      // full daylight: skip the pass

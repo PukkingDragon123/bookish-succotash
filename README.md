@@ -74,22 +74,75 @@ Choosing **BEGIN** on the title screen starts the campaign in Block C:
 
 1. **The tank.** You wake in the glass. Dax, a beaver two years into chewing
    through his own tank seal, introduces himself through the pane.
-2. **The course.** They run you through an obstacle course for food. It is
-   tiring — a real exhaustion meter that drains your speed the longer you run —
-   and there is a dish at the end.
-3. **The plan.** He hits it low, you hit it high, same moment, every time.
-4. **The break.** Mash. The pane goes.
-5. **The shot.** The alarm brings a guard, and the guard shoots Dax in front of
+2. **The chair.** The lights in Block C go out. The room goes quiet. And then
+   you hear it, a long way off, coming down the hall: **Aldous Vane**, Chief
+   Executive, Les Nest Holdings — a failing man in a powered chair, kept
+   running by the same division that keeps you running. He has been watching
+   you sleep through the eye he put in your head. He does not raise his voice
+   once. When Dax objects, Vane presses a button on the arm of the chair, and
+   Dax stops objecting.
+3. **The course.** He orders you to run it, and tells you in advance that you
+   will not be fed. He is not lying. You run the whole thing, reach the dish,
+   and somebody has washed it and put it back — and then he asks you, politely,
+   to run it again, from the gate, on an exhaustion meter that does not reset.
+   He narrates both laps over the PA in a level voice. He is not angry with
+   you. He is taking notes.
+4. **The plan.** Dax hits it low, you hit it high, same moment, every time.
+5. **The break.** Mash. The pane goes.
+6. **The shot.** The alarm brings a guard, and the guard shoots Dax in front of
    you. There is blood, and there is a floor that keeps it.
-6. **Feral.** You take him apart with your claws, and then you take his gun.
+7. **Feral.** You take him apart with your claws, and then you take his gun.
    The implant in your head wakes up and starts talking. It has been counting
    the days with you.
-7. **The rampage.** Holding block, corridor, the surgery they used on you, the
-   security wing, the roof.
-8. **The transport.** You fly it. You are not a pilot. It comes down in a
+8. **The rampage.** Holding block, corridor, the surgery they used on you, the
+   security wing, the roof — with Vane on the PA the whole way, telling his
+   people not to close any doors and not to damage the head.
+9. **The transport.** You fly it. You are not a pilot. It comes down in a
    basin somewhere north, which is where the rest of the game happens.
 
-You can skip all of it from the menu and start in the basin instead.
+You can skip all of it from the menu and start in the basin instead. Tap **E**
+to move a line along; it never skips a beat that is waiting on you.
+
+### The building
+
+Block C is not a set of corridors with a guard in it. Every room is dressed:
+gurneys with the straps still buckled, IV stands, specimen shelves, pipe runs
+along the ceiling, floor drains where you would rather there were not floor
+drains, biohazard signs, a mop bucket, an incinerator with the fire visible
+behind the hatch.
+
+A lot of it you can press **E** on:
+
+- **Terminals** print what the building thinks of you. Course times. The
+  procedure log for day 88, which notes that anaesthesia interferes with nerve
+  mapping and that you were conscious for six hours and twenty minutes.
+- **Specimen jars** hold the ones before you. Subject 12, terminated day 40.
+  The labels are printed in advance.
+- **Lockers** can be forced for rounds, salve and scrap.
+- **Vents** are the good one. You are forty centimetres of spine and the
+  building is full of ducts wider than you are, and somebody at Les Nest did
+  not cost that in. Three duct runs link Block C to the service corridor, the
+  course gallery to the security wing, and the surgery to the east stair — so
+  the rampage has real routing: skip a room, flank a group, or go round the
+  thing you cannot fight yet.
+
+### The ferret
+
+Every other animal in the game is baked into sprite sheets. She is not.
+
+A black-footed ferret is forty centimetres of spine with very short legs bolted
+underneath, and it does not walk, it flows — so she is a rig solved fresh every
+frame. Fifteen spine nodes trail the nose under a hard length constraint and a
+per-joint bend limit, which means turning sends a whip down the body a joint at
+a time. A travel-driven phase (not a timer) runs a bound wave along the back,
+so the gait speeds up because you are moving, not the other way round. The four
+feet are placed by inverse kinematics: a paw plants, the body travels over it,
+and it only swings forward once it has been left too far behind, which is why
+the legs never skate.
+
+She is small. Deliberately, conspicuously small — a thin pale streak with a
+black tail-tip and one eye that is not hers, moving through a forest full of
+things very much larger than she is.
 
 ### The first fight, which you lose
 
@@ -291,7 +344,7 @@ src/
                    chunked terrain rendering, the fire simulation, and the
                    hand-laid Les Nest facility
   entities/        player, bullets, enemies, NPCs, wildlife, pickups, hazards
-  story/           cutscene timeline player, the eight-chapter campaign, and
+  story/           cutscene timeline player, the nine-chapter campaign, and
                    the scripted first defeat
   systems/         resource/weapon/chip/recipe data, inventory, animal tools,
                    squad orders, wave director
@@ -301,6 +354,12 @@ tools/             headless test harnesses (see below)
 
 A few things worth knowing if you go reading:
 
+- **The player is the exception to everything else here.** `art/ferret.js` is
+  a live rig, not a sheet: no cached frames, no animation states, just a
+  constrained spine and four IK feet re-solved each frame and painted as
+  perpendicular spans along the body so the silhouette stays clean at any
+  angle. The outline is a second pass one pixel wider rather than a
+  `getImageData` edge trace, which is what makes drawing it live affordable.
 - **Sprites are baked, not drawn live.** `art/critters.js` renders each
   animation frame once into a canvas and caches it. Animation comes from
   analytic pose curves with deliberate phase lag between body, head and tail,

@@ -126,7 +126,28 @@ export class Cutscene {
     }
   }
 
-  /** Let the player skip a line they have already read. */
+  /**
+   * A tap does the obvious thing: finish the line if it is still typing,
+   * otherwise move on to the next beat.
+   *
+   * Never skips a beat that is waiting on the player — a mash, a hold, or a
+   * condition — because those are the scene handing control back, and pressing
+   * the button is how you play them, not how you leave them.
+   */
+  skip() {
+    const b = this.beat;
+    if (!b) return false;
+    if (this.line && this.line.chars < this.line.text.length) {
+      this.line.chars = this.line.text.length;
+      return true;
+    }
+    if (b.mash || b.hold || b.until) return false;
+    if (this.t < 0.12) return false;         // no double-taps eating two beats
+    this.advance();
+    return true;
+  }
+
+  /** Kept for callers that only want the typewriter finished. */
   skipLine() {
     if (this.line && this.line.chars < this.line.text.length) {
       this.line.chars = this.line.text.length;
@@ -152,6 +173,12 @@ export class Cutscene {
         const nw = measure(this.line.who, 1) + 6;
         r.uiRect(15, by - 8, nw, 9, this.line.color);
         drawText(ctx, this.line.who, 18, by - 7, '#0d1512');
+      }
+      // the affordance, small and in the corner of the box
+      if (this.line.chars >= this.line.text.length) {
+        const hint = 'E';
+        drawText(ctx, hint, VIEW_W - 18, by + boxH - 9,
+          Math.floor(game.time * 3) % 2 ? P.uiDim : P.uiAccent, { align: 'right' });
       }
       let used = 0;
       for (let i = 0; i < this.line.lines.length; i++) {

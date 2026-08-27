@@ -6,6 +6,7 @@
 import { PLAYER_CFG } from '../art/species.js';
 import { critterFrames } from '../art/critters.js';
 import { carryLogSprite, weaponSprite, WEAPON_MUZZLE, muzzleFlash } from '../art/items.js';
+import { FerretRig } from '../art/ferret.js';
 import { P } from '../art/palette.js';
 import { flashFrames } from '../art/pixel.js';
 import { WEAPONS, CHIPS, RESOURCES } from '../systems/defs.js';
@@ -102,6 +103,9 @@ export class Player {
     // Permanent story bonuses. Kept apart from chips so recompute() can rebuild
     // the chip stats from scratch without wiping them.
     this.bonus = { damage: 0, speed: 0, hp: 0, rof: 0 };
+    // The ferret is not a sprite sheet. It is a spine that trails the nose and
+    // four feet that plant themselves, solved fresh every frame.
+    this.rig = new FerretRig();
     this.spite = false;
 
     this.recompute();
@@ -229,7 +233,14 @@ export class Player {
       const dashSpeed = 330 * (1 - Math.pow(1 - this.dashT / 0.18, 2) * 0.35);
       this.vx = Math.cos(this.dashAngle) * dashSpeed;
       this.vy = Math.sin(this.dashAngle) * dashSpeed;
-      if (chance(dt * 60)) this.afterimages.push({ x: this.x, y: this.y, life: 0.22, maxLife: 0.22, view: this.view, facing: this.facing, anim: this.anim, t: this.animT });
+      // The trail records the shape the body was actually in, not a stamped
+      // silhouette: at speed the ferret leaves a ribbon behind it.
+      if (chance(dt * 70)) {
+        this.afterimages.push({
+          life: 0.24, maxLife: 0.24,
+          spine: this.rig.spine.map((n, i) => ({ x: n.x, y: n.y, r: this.rig.radiusAt(i) })),
+        });
+      }
       this.invuln = Math.max(this.invuln, 0.06);
     } else {
       const target = { x: moveX * speed, y: moveY * speed };
@@ -239,6 +250,13 @@ export class Player {
     }
 
     this._move(this.vx * dt, this.vy * dt, world);
+
+    // the body follows wherever the nose ended up
+    this.rig.update(dt, {
+      x: this.x, y: this.y, vx: this.vx, vy: this.vy,
+      facing: this.facing, anim: this.anim,
+      dashing: this.dashT > 0, aim: this.aim,
+    });
 
     // face the aim while shooting or standing, movement direction otherwise
     const aimingBack = Math.sin(this.aim) < -0.35;
@@ -421,9 +439,11 @@ export class Player {
 
     const count = w.count + this.stats.count;
     const spread = w.spread + this.stats.spread;
-    const muzzleDist = (WEAPON_MUZZLE[w.art] || 16) - 4;
-    const ox = this.x + Math.cos(this.aim) * muzzleDist;
-    const oy = this.y - 10 + Math.sin(this.aim) * muzzleDist;
+    // Rounds leave the barrel where the barrel actually is.
+    const sh = this.rig.shoulder();
+    const muzzleDist = ((WEAPON_MUZZLE[w.art] || 16) - 4) * 0.62;
+    const ox = sh.x + Math.cos(this.aim) * muzzleDist;
+    const oy = sh.y - 2 + Math.sin(this.aim) * muzzleDist;
 
     const dmg = w.damage * (1 + this.stats.damage) * this.damageMult;
 
@@ -627,6 +647,7 @@ export class Player {
     this.invuln = 2.5;
     this.shieldUp = this.stats.shield > 0;
     this.carrying = null;
+    this.rig.reset(this.x, this.y);
   }
 
   // --- gathering -----------------------------------------------------------
@@ -743,71 +764,58 @@ export class Player {
   draw(r, game) {
     if (this.dead && this.deathT > 1.2) return;
     const time = game.time;
-    const fr = this.frames(this.anim, this.view);
-    const idx = Math.floor(this.animT * fr.length) % fr.length;
-    let img = fr[idx];
-    const w = img.width, h = img.height;
-    const bx = this.x - w / 2;
-    const by = this.y - h + 2;
 
     // contact shadow, squashed when dashing
-    r.shadow(this.x, this.y + 1, 6 + (this.dashT > 0 ? 2 : 0), 2.6);
+    r.shadow(this.x, this.y + 1, 5 + (this.dashT > 0 ? 2 : 0), 2.2);
 
-    // dash afterimages
+    // Dash afterimages: the shape the body was actually in a few frames ago,
+    // so at speed the ferret leaves a ribbon rather than a row of stamps.
     for (const a of this.afterimages) {
-      const af = critterFrames('player', PLAYER_CFG, a.anim, a.view, 8);
-      const ai = af[Math.floor(a.t * af.length) % af.length];
-      r.draw(ai, a.x - ai.width / 2, a.y - ai.height + 2, a.facing < 0, (a.life / a.maxLife) * 0.4);
+      if (!a.spine) continue;
+      this.rig.drawGhost(r, a.spine, (a.life / a.maxLife) * 0.4, P.cyberDim);
     }
 
     const flipped = this.facing < 0;
 
-    // Wood rides in a bundle behind the shoulder, offset away from the head so
-    // the ferret stays readable even with a full ten-log load. Drawn behind the
-    // body in front view, in front of it when you see their back.
+    // Wood rides in a bundle over the shoulders, tracked to the live spine so
+    // it stays on her back through every turn and bound.
     const drawWood = () => {
       const n = this.wood;
       if (n <= 0) return;
       const log = carryLogSprite(0);
-      const dir = flipped ? -1 : 1;
+      const sh = this.rig.shoulder(), hp = this.rig.hipNode();
+      const bx = (sh.x + hp.x) / 2, by = (sh.y + hp.y) / 2;
+      const ang = Math.atan2(hp.y - sh.y, hp.x - sh.x);
       const moving = Math.hypot(this.vx, this.vy) > 20;
       for (let i = 0; i < n; i++) {
         const row = Math.floor(i / 2), col = i % 2;
         const wob = Math.sin(time * 7 + i * 0.8) * (moving ? 0.7 : 0.15);
-        const lx = this.x - dir * (7 + col * 2);
-        const ly = this.y - 9 - row * 2.6 - col * 0.8 + wob;
-        r.drawT(log, lx, ly, -dir * 0.17 + wob * 0.03, dir, 1, 1);
+        const along = (col - 0.5) * 3.4;
+        const lx = bx + Math.cos(ang) * along;
+        const ly = by + Math.sin(ang) * along - 5 - row * 2.4 + wob;
+        r.drawT(log, lx, ly, ang + Math.PI / 2 + wob * 0.04, 1, 1, 1);
       }
-      // the strap that supposedly holds it all on
-      r.line(this.x - dir * 11, this.y - 10, this.x + dir * 1, this.y - 6, '#4a3f2c', 1, 0.8);
+      r.line(sh.x, sh.y - 3, hp.x, hp.y - 3, '#4a3f2c', 1, 0.8);
     };
 
     if (this.view === 'front') drawWood();
 
-    // hurt / overclock tinting
+    // hurt / overclock tinting, applied to the whole rig at once
     const flashing = this.hurtT > 0 && Math.floor(this.hurtT * 24) % 2 === 0;
     const invulnBlink = this.invuln > 0 && this.hurtT <= 0 && Math.floor(this.invuln * 14) % 2 === 0;
-    if (flashing) {
-      const ff = flashFrames('player:' + this.anim + this.view, fr, '#ffffff');
-      img = ff[idx];
-    } else if (this.overclock) {
-      const ff = flashFrames('player:oc:' + this.anim + this.view, fr, P.cyber);
-      if (Math.floor(time * 18) % 3 === 0) img = ff[idx];
-    }
+    let tint = null;
+    if (flashing) tint = '#ffffff';
+    else if (this.overclock && Math.floor(time * 18) % 3 === 0) tint = P.cyber;
 
-    const squash = this.dashT > 0 ? 1.14 : 1;
-    if (squash !== 1) {
-      r.drawT(img, this.x, this.y - h / 2 + 2, 0, flipped ? -squash : squash, 1 / squash, invulnBlink ? 0.5 : 1);
-    } else {
-      r.draw(img, bx, by, flipped, invulnBlink ? 0.5 : 1);
-    }
+    this.rig.draw(r, { alpha: invulnBlink ? 0.5 : 1, tint });
 
     if (this.view === 'back') drawWood();
 
-    // carried animal
+    // carried animal, riding on the shoulders
     if (this.carrying) {
       const cf = this.carrying.sprite;
-      if (cf) r.drawT(cf, this.x + (flipped ? 5 : -5), this.y - h - 2, Math.sin(time * 5) * 0.12, 0.8, 0.8);
+      const sh = this.rig.shoulder();
+      if (cf) r.drawT(cf, sh.x + (flipped ? 4 : -4), sh.y - 8, Math.sin(time * 5) * 0.12, 0.8, 0.8);
     }
 
     // held weapon, rotated to the aim
@@ -827,14 +835,15 @@ export class Player {
     // shield bubble
     if (this.shieldUp) {
       const pulse = 0.5 + Math.sin(time * 4) * 0.12;
-      r.ring(this.x, this.y - 8, 12 + Math.sin(time * 3) * 0.8, P.springHot, 1, pulse * 0.8);
+      const mid = this.rig.shoulder();
+      r.ring(mid.x, mid.y, 12 + Math.sin(time * 3) * 0.8, P.springHot, 1, pulse * 0.8);
     }
 
-    // Cybernetic eye glow. Anchored to the skull in world units (not to the
-    // sprite canvas, which carries headroom for taller species).
-    const eyeX = this.x + (flipped ? -3.5 : 3.5);
-    const eyeY = this.y - 16;
-    r.glow(eyeX, eyeY, this.overclock ? 11 : 5, this.overclock ? 'rgba(180,245,255,0.8)' : 'rgba(77,225,255,0.5)', 1);
+    // Cybernetic eye glow, tracked to the actual skull the rig solved this
+    // frame rather than to a fixed offset from the feet.
+    const eye = this.rig.eyePos();
+    r.glow(eye.x, eye.y, this.overclock ? 11 : 5,
+      this.overclock ? 'rgba(180,245,255,0.8)' : 'rgba(77,225,255,0.5)', 1);
 
     // overclock aura
     if (this.overclock) {
@@ -846,26 +855,31 @@ export class Player {
     if (this.weapon.meleeOnly) return;      // claws are already on your hands
     const w = this.weapon;
     const img = weaponSprite(w.art);
-    const dist = 5 - this.recoil * 3;
-    const gx = this.x + Math.cos(this.aim) * dist;
-    const gy = this.y - 10 + Math.sin(this.aim) * dist * 0.6;
+    // The gun rides on the shoulders the rig solved this frame, and it is
+    // scaled down to something a two-kilo animal could plausibly hold.
+    const sh = this.rig.shoulder();
+    const GS = 0.62;
+    const dist = 3.5 - this.recoil * 2;
+    const gx = sh.x + Math.cos(this.aim) * dist;
+    const gy = sh.y - 2 + Math.sin(this.aim) * dist * 0.6;
     const flipY = Math.cos(this.aim) < 0 ? -1 : 1;
-    r.drawT(img, gx, gy, this.aim, 1, flipY, 1, 2, img.height / 2);
+    r.drawT(img, gx, gy, this.aim, GS, flipY * GS, 1, 2, img.height / 2);
     if (this.muzzleT > 0) {
       const mf = muzzleFlash(w.art === 'scatter' || w.art === 'lobber' ? 1.5 : 1);
       const i = Math.min(2, Math.floor((1 - this.muzzleT / 0.09) * 3));
-      const md = (WEAPON_MUZZLE[w.art] || 16) - 2;
-      const mx = this.x + Math.cos(this.aim) * md;
-      const my = this.y - 10 + Math.sin(this.aim) * md;
+      const md = ((WEAPON_MUZZLE[w.art] || 16) - 2) * GS;
+      const mx = sh.x + Math.cos(this.aim) * md;
+      const my = sh.y - 2 + Math.sin(this.aim) * md;
       r.ctx.globalCompositeOperation = 'lighter';
-      r.drawT(mf[i], mx, my, this.aim, 1, flipY, 1, 2, 6);
+      r.drawT(mf[i], mx, my, this.aim, GS, flipY * GS, 1, 2, 6);
       r.ctx.globalCompositeOperation = 'source-over';
       r.glow(mx, my, 22, 'rgba(255,190,90,0.7)', 1);
     }
   }
 
   drawLight(r) {
-    r.light(this.x, this.y - 8, 84, 'rgba(255,240,210,0.55)', 0.9);
+    const eye = this.rig.eyePos();
+    r.light(eye.x, eye.y, 84, 'rgba(255,240,210,0.55)', 0.9);
     if (this.overclock) r.light(this.x, this.y - 8, 60, 'rgba(120,220,255,0.7)', 0.8);
   }
 }
