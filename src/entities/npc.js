@@ -12,6 +12,7 @@ import { critterFrames, critterSize } from '../art/critters.js';
 import { itemIcon } from '../art/items.js';
 import { P } from '../art/palette.js';
 import { flashFrames } from '../art/pixel.js';
+import { STRUCTURES } from '../systems/camp.js';
 import { RESOURCES, randomChipKey } from '../systems/defs.js';
 import { TAU, clamp, dist2, angleDiff } from '../engine/math.js';
 import { rnd, pick, chance, makeRng } from '../engine/rng.js';
@@ -23,7 +24,165 @@ export const RECRUIT_FAVOR = 3;   // completed requests needed before they enlis
 
 // --- request tables --------------------------------------------------------
 // Each NPC has an escalating chain. `give` is what you get back, physically.
+// Things they say about what is actually happening, rather than at random.
+// An NPC who comments on the wave that just started, the fire on the ridge, or
+// the fact that you finally got them a workbench is a person; one who cycles
+// four idle lines forever is furniture.
+const REACT = {
+  waveIncoming: {
+    gruff: "Here they come. Get behind something.",
+    sunny: "Oh no. Oh no no no. Right. I'm ready. I'm not ready.",
+    sardonic: "And there's the four o'clock. Punctual, I'll give them that.",
+    stoic: "Let them come.",
+    frantic: "THEYRE COMING THEYRE COMING GO GO GO",
+    haunted: "That's the transport note. Two trucks. I know the sound.",
+    excitable: "Ooh! Ooh. That's bad. That's a bad ooh.",
+    brave: "I'm not scared. I'm NOT.",
+    fussy: "Everyone stay where I can see you. I mean it.",
+    blunt: "Dig in.",
+    dry: "Right on time.",
+    wry: "I'd run, but you'd only follow me.",
+    grim: "Nine of them. I counted from the ridge.",
+    patient: "They always come back to the same slope. Every time.",
+    small: "Is it them? IS IT THEM?",
+  },
+  waveClear: {
+    gruff: "That's that. Reload.",
+    sunny: "We did it! Everyone in one piece? Everyone?",
+    sardonic: "Well. That was invigorating.",
+    stoic: "The valley holds.",
+    frantic: "WE WON WE WON did we win?",
+    haunted: "They'll send more. They always send more.",
+    excitable: "Did you SEE the geyser?!",
+    brave: "I helped! I did help!",
+    fussy: "Right. Line up. I want to look at all of you.",
+    blunt: "Good.",
+    dry: "Fewer of them than there were.",
+    wry: "I'll go and count the bodies. Someone has to keep score.",
+    grim: "That was the small one.",
+    patient: "Three saplings lost. They'll come back.",
+    small: "THAT WAS AMAZING. Can we do it again? Not really.",
+  },
+  fire: {
+    gruff: "Fire. Move the powder. MOVE IT.",
+    sunny: "The lupine — the whole north slope — no, no, no—",
+    sardonic: "They've set the basin on fire. Of course they have.",
+    stoic: "I have seen this before. It came back. It will come back.",
+    frantic: "FIREFIREFIRE water WHERE IS THE WATER",
+    haunted: "This is what they did to the last valley.",
+    excitable: "That's not a geyser! That's the WRONG kind of hot!",
+    brave: "I can get the kits. Let me get the kits!",
+    fussy: "Burns. There will be burns. I need water and I need it now.",
+    blunt: "Firebreak. North side. Dig.",
+    dry: "Wind's from the west. It'll take the ridge first.",
+    wry: "I'll run the line. Try to keep up.",
+    grim: "I told you it would burn again. I hate being right.",
+    patient: "Two hundred and six. Please. Please not the north slope.",
+    small: "I'm scared. I'm really scared.",
+  },
+  built: {
+    gruff: "Proper bench. Now we can work.",
+    sunny: "It's starting to look like somewhere!",
+    sardonic: "A camp. How rustic. I approve, which surprises me.",
+    stoic: "A place. Good. A place is worth defending.",
+    frantic: "IT'S SO GOOD I LOVE IT",
+    haunted: "It's the first thing I've seen built in six years.",
+    excitable: "Now do the forge! Do the forge next!",
+    brave: "Is that ours? Is it OURS?",
+    fussy: "Finally. I can put things DOWN.",
+    blunt: "Solid. Won't fall over.",
+    dry: "Better than the hole I was living in.",
+    wry: "A whole building. And they said you were feral.",
+    grim: "Something worth standing in front of. Hm.",
+    patient: "Good wood. Well used.",
+    small: "IS THAT OURS? IT'S OURS!",
+  },
+  lowHp: {
+    gruff: "You're leaking. Sit down.",
+    sunny: "You're hurt! Doc! DOC!",
+    sardonic: "You look like a rug someone lost an argument with.",
+    stoic: "Rest. The valley will still be here.",
+    frantic: "YOU'RE BLEEDING you're bleeding okay okay okay",
+    haunted: "I've seen that colour before. Sit down.",
+    excitable: "That's a LOT of red. Is that normal? That's not normal.",
+    brave: "I'll hold them off! You rest!",
+    fussy: "Sit. DOWN. I am not asking.",
+    blunt: "Stop. Bleed later.",
+    dry: "You're going to fall over. Do it near me and I'll drag you back.",
+    wry: "I could carry you, but I'd never let you forget it.",
+    grim: "Not today. Sit.",
+    patient: "Everything mends if you let it. Let it.",
+    small: "Don't die. Please don't die. You're the only one who lets me help.",
+  },
+};
+
 const REQUESTS = {
+  tamarack: [
+    { ask: { fiber: 8, iron: 3 }, give: { items: { meds: 3 } },
+      offer: "Their snares are wire on a spring. Mine are fibre and they let go when the animal is heavy enough.\nBring me eight fibre and three iron and I will lay a line that only catches people.",
+      done: "Laid. If something screams out there tonight, it is wearing a company jacket." },
+    { ask: { scrap: 10, wood: 6 }, give: { turret: true },
+      offer: "I have been taking their traps apart for six years. I know what is inside them.\nTen scrap, six logs, and I will build you something that watches the treeline for you.",
+      done: "It sits still and it does not blink. Better company than most." },
+    { ask: { obsidian: 4, fiber: 10 }, give: { maxHp: 15 },
+      offer: "That coat of yours is not going to stop anything. Obsidian and fibre, and I will fix that.",
+      done: "Layered. Not armour. But it will turn a graze into a scratch." },
+  ],
+  pitch: [
+    { ask: { ammo: 12 }, give: { items: { ammo: 30 } },
+      offer: "Here is how a relay works: you give me twelve rounds, I run them to three caches, and\nwherever you end up there are rounds already there. Yes it is more rounds. That is the trick.",
+      done: "Thirty back. Do not ask me how. Actually do, it was a very good week." },
+    { ask: { berries: 8, water: 2 }, give: { intel: 1 },
+      offer: "I run the ridge line every morning. Feed me and I will tell you what is coming up the road.",
+      done: "Two trucks and a walker, four hours out, and one of them has a fuel problem." },
+    { ask: { scrap: 12, copper: 4 }, give: { chipSlot: 1 },
+      offer: "Cobalt showed me how the sockets go in. I have smaller hands. Trust me, this is an advantage.",
+      done: "Socket. Try not to think about how close that was to your brain." },
+  ],
+  slate: [
+    { ask: { stone: 14 }, give: { survey: 1 },
+      offer: "Fourteen stone. Not for building. I want to see what is IN them.\nThen I can tell you where the rest of it is, and you can stop digging holes at random.",
+      done: "There. Iron north-east, copper along the river, and obsidian where the ground is warm." },
+    { ask: { iron: 8, coal: 6 }, give: { weapon: 'sparker' },
+      offer: "Iron and coal. There is a thing I have wanted to build since I was a pup and it throws sparks.",
+      done: "Do not point it at anything you want to keep. Including your own tail." },
+    { ask: { obsidian: 6, stone: 20 }, give: { barricade: 2 },
+      offer: "Twenty stone and six obsidian and I will put a wall around this camp that they have to work at.",
+      done: "Dry stone, obsidian keyed. It will hold. I built it." },
+  ],
+  cinder: [
+    { ask: { water: 4, fiber: 6 }, give: { items: { water: 6 } },
+      offer: "I can see the whole basin from up there. What I cannot do is carry water to it.\nFour water, six fibre for the slings, and there will be caches where you need them.",
+      done: "Six caches. When it burns, you will not be running back to the river." },
+    { ask: { charcoal: 8, scrap: 6 }, give: { intel: 2 },
+      offer: "Charcoal and scrap. I am building something that tells me where the heat is before you can see it.",
+      done: "It watches for smoke. When it screams, you run toward it, not away." },
+    { ask: { copper: 6, saltpeter: 8 }, give: { smokeBombs: true },
+      offer: "Copper and saltpeter. You want to disappear? I will show you how the crows do it.",
+      done: "Three of them. Throw it down, count two, be somewhere else." },
+  ],
+  willow: [
+    { ask: { wood: 10 }, give: { items: { wood: 4, fiber: 8 } },
+      offer: "Ten logs. Before you object: I am not taking them, I am planting them.\nGive me a season and the north slope is forest again. Give me ten logs and it is this season.",
+      done: "Two hundred and sixteen. I counted." },
+    { ask: { water: 3, fiber: 12 }, give: { maxHp: 20 },
+      offer: "Willow bark, water, and time. Chew it. It will not fix the stitches but it will stop them hurting.",
+      done: "Better? Good. Do not swallow the bark." },
+    { ask: { wood: 20, stone: 8 }, give: { revive: 2 },
+      offer: "There is a dam that needs to be a dam again. If the water comes back, so does everything else.",
+      done: "Listen to that. That is a river doing what a river does." },
+  ],
+  rill: [
+    { ask: { berries: 4 }, give: { items: { berries: 6, meds: 1 } },
+      offer: "I'm not allowed to go past the big rock! But YOU are!\nBring me four huckleberries and I'll show you my secret thing. It's a REALLY good secret thing.",
+      done: "It's a hollow log full of berries. I've been saving it since spring. You can have some." },
+    { ask: { scrap: 6, fiber: 4 }, give: { items: { meds: 3 } },
+      offer: "I'm making armour. Out of scrap. For ME. Don't laugh, Bramble laughed and he was WRONG.",
+      done: "See? SEE? Okay it fell off. But it worked for a bit!" },
+    { ask: { copper: 3, iron: 3 }, give: { maxHp: 10 },
+      offer: "Doc Quill says your stitches are going to open if nobody fixes them and everyone's busy,\nso I read the book. All of it. Bring me copper and iron and hold still.",
+      done: "I DID IT. I did it! Don't tell Mum I used the needle." },
+  ],
   brindle: [
     { ask: { wood: 6, iron: 4 }, give: { weapon: 'scatter' },
       offer: "You want to live through the week, you need more than that seed popper. Bring me six logs and four iron and I'll build you a scattergun.",
@@ -138,6 +297,16 @@ const REQUESTS = {
 
 const BARKS = {
   gruff: ['Hmph.', 'Still standing.', 'Work to do.', "Don't touch that."],
+  dry: ['Mm.', "Found another snare this morning. Third this week.",
+    "You walk loud.", "There's a wire across the north draw. Was."],
+  wry: ['Slow day. For you.', 'Message for you: run faster.', 'Still alive? Good, I had money on it.',
+    "I've been to the ridge and back twice since you last blinked."],
+  grim: ['Smoke on the north ridge.', 'I count nine of them.', 'It will burn again.',
+    "I watched the last one. From up there. All of it."],
+  patient: ['Two hundred and six.', 'That one will take forty years.', 'Plant more than you take.',
+    'The river is low. It does that.'],
+  small: ['HI!', "Are you the one from the lab? Are you?", 'I can help! I can!',
+    "Mum says I'm not allowed near the fire.", 'Watch this! WATCH THIS!'],
   sunny: ['Look at the lupine!', 'Good morning!', 'The basin smells like rain.', 'Careful of the mats!'],
   sardonic: ['Delightful.', 'Another beautiful day in the extraction zone.', 'You look busy.', 'Mm.'],
   stoic: ['...', 'The valley remembers.', 'We stand.', 'Hm.'],
@@ -151,6 +320,11 @@ const BARKS = {
 
 const WAITING = {
   gruff: "Well? I don't have it yet.",
+  dry: "It's not here. I checked.",
+  wry: "I could have run there and back nine times by now, but no pressure.",
+  grim: "The clock is running. It always is.",
+  patient: "When you have it. Not before.",
+  small: "Did you get it? DID YOU? Sorry. Sorry.",
   sunny: "No rush! But also, some rush!",
   sardonic: "I'll just be here. Existing.",
   stoic: "I will wait. I am good at that.",
@@ -163,6 +337,12 @@ const WAITING = {
 };
 
 const RECRUIT_LINE = {
+  tamarack: "Six years I have been cutting their wire alone. I would rather not make it seven. I am with you.",
+  pitch: "You want someone who can be four places at once? That is the entire job description. Let's go.",
+  slate: "I know where every seam in this basin is, and I know where every one of their drills is going to hit. Point me at it.",
+  cinder: "I have watched this valley burn once. I will not watch it twice from a branch. Put me in it.",
+  willow: "Two hundred and six trees. I planted every one. I am not letting them have a single one of them.",
+  rill: "Mum said no. Mum is not here. I'm coming and you can't stop me and I'll be REALLY useful.",
   brindle: "You've done more for this basin than I have in ten years. Point me at them. I'll bring the long gun.",
   juniper: "I can't stitch you back together fast enough from over here. I'm coming with you.",
   cobalt: "Fine. FINE. I'm coming. Someone has to talk to their machines.",
@@ -229,14 +409,55 @@ export class NPC {
     this.w = s.w; this.h = s.h;
     this.r = Math.max(5, this.cfg.bodyW * 0.8);
     this.requests = REQUESTS[key] || [];
+    this.pendingReq = null;
+    this.buildTarget = null;
   }
 
   get name() { return this.data.name; }
   get personality() { return this.data.personality; }
-  get done() { return this.questIndex >= this.requests.length; }
+  get done() { return this.questIndex >= this.requests.length && !this.buildOffer; }
+
+  /**
+   * The structure this one is willing to raise next, if any. Building the camp
+   * always comes before their personal requests: there is no point asking
+   * Brindle for a scattergun when there is nowhere to build one.
+   */
+  buildOfferFor(game) {
+    if (!game.camp || game.camp.building) return null;
+    const keys = game.camp.offersFor(this.key);
+    return keys.length ? keys[0] : null;
+  }
+
+  /** The request object for a structure, shaped like any other request. */
+  buildRequest(key) {
+    const d = STRUCTURES[key];
+    return {
+      ask: d.cost, give: { build: key }, offer: d.offer, done: d.done,
+      structure: key, name: d.name,
+    };
+  }
+
+  /**
+   * What this one's face is doing. Read off their situation, so an NPC who is
+   * down looks down and one who is halfway through building your workbench
+   * looks like they are concentrating.
+   */
+  get expression() {
+    if (this.downT > 0) return 'hurt';
+    if (this.hurtT > 0.05) return 'hurt';
+    if (this.hp < this.maxHp * 0.35) return 'hurt';
+    if (this.talkT > 0) return 'talk';
+    if (this.anim === 'attack' || this.chargeT > 0) return 'angry';
+    if (this.state === 'crafting' || this.state === 'building') return 'focused';
+    if (this.state === 'gifting') return 'happy';
+    if (this.state === 'offering' || this.state === 'waiting') return 'curious';
+    if (this.recruited) return 'focused';
+    if (this.favor >= 3) return 'happy';
+    return 'calm';
+  }
 
   get sprite() {
-    const fr = critterFrames('npc:' + this.key, this.cfg, this.anim, this.view, 8);
+    const fr = critterFrames('npc:' + this.key, this.cfg, this.anim, this.view, 8, this.expression);
     return fr[Math.floor(this.animT * fr.length) % fr.length];
   }
 
@@ -249,8 +470,30 @@ export class NPC {
       return 'TALK TO ' + this.name.toUpperCase();
     }
     if (this.state === 'crafting') return null;
+    if (this.state === 'building') return null;
     if (this.recruited) return 'TALK TO ' + this.name.toUpperCase();
     return 'TALK TO ' + this.name.toUpperCase();
+  }
+
+  /**
+   * Say something about what just happened. Falls back silently if this
+   * personality has no line for the event, so adding an event is cheap.
+   */
+  react(kind, game, chanceToSpeak = 1) {
+    if (this.downT > 0 || this.state === 'building') return false;
+    const table = REACT[kind];
+    if (!table) return false;
+    const line = table[this.personality];
+    if (!line || !chance(chanceToSpeak)) return false;
+    game.dialogue.showFloating(this, line);
+    this.talkT = Math.max(this.talkT, 2.2);
+    this.barkT = rnd(8, 20);
+    return true;
+  }
+
+  /** The camp changed. They notice. */
+  onCampChanged(game, key) {
+    this.react('built', game, 0.5);
   }
 
   /** What the player still owes on the active request. */
@@ -308,8 +551,14 @@ export class NPC {
       return;
     }
 
-    // offer the next request; the player accepts by pressing E again
-    const req = this.requests[this.questIndex];
+    // Offer the next thing. A camp structure outranks anything personal.
+    const bkey = this.buildOfferFor(game);
+    const req = bkey ? this.buildRequest(bkey) : this.requests[this.questIndex];
+    if (!req) {
+      game.dialogue.show(this, pick(BARKS[this.personality]), 2.4);
+      return;
+    }
+    this.pendingReq = req;
     if (this.state !== 'offering') {
       this.state = 'offering';
       this.stateT = 12;
@@ -321,7 +570,7 @@ export class NPC {
   }
 
   acceptQuest(game) {
-    const req = this.requests[this.questIndex];
+    const req = this.pendingReq || this.requests[this.questIndex];
     this.quest = req;
     this.delivered = {};
     this.state = 'waiting';
@@ -404,6 +653,9 @@ export class NPC {
     if (give.revive) { game.revives += give.revive; game.toast('SECOND CHANCE BANKED', P.uiGood, 3); }
     if (give.smokeBombs) { game.smokeBombCharges += 3; game.toast('SMOKE BOMBS +3  [G TO THROW]', P.uiGood, 3.4); }
     if (give.geyserControl) { game.geyserControl = true; game.toast('GEYSER CONTROL ONLINE', P.springHot, 3.4); }
+    // give.build is handled below, once they have actually built the thing
+
+    const wasBuild = this.quest.structure;
 
     game.dialogue.show(this, this.quest.done, 4.5);
     audio.play('waveclear', { vol: 0.5 });
@@ -412,6 +664,13 @@ export class NPC {
 
     this.quest = null;
     this.delivered = null;
+    // A camp structure is not one of their personal requests, so it does not
+    // consume one: they go off and build it and their own list is untouched.
+    if (wasBuild) {
+      this.pendingReq = null;
+      game.camp.beginBuild(wasBuild, this, game);
+      return;
+    }
     this.questIndex++;
     this.state = 'idle';
 
@@ -424,6 +683,13 @@ export class NPC {
   // ---------------------------------------------------------------- update
   update(dt, game) {
     this.hurtT = Math.max(0, this.hurtT - dt);
+    // While they are raising something the camp system owns them completely.
+    if (this.state === 'building') {
+      this.anim = 'work';
+      this.animT = (this.animT + dt * 2.4) % 1;
+      this.talkT = Math.max(0, this.talkT - dt);
+      return;
+    }
     this.talkT = Math.max(0, this.talkT - dt);
 
     if (this.downT > 0) {
@@ -612,7 +878,7 @@ export class NPC {
     r.shadow(this.x, this.y, this.r + 1, (this.r + 1) * 0.4);
     let out = img;
     if (this.hurtT > 0 && Math.floor(this.hurtT * 26) % 2 === 0) {
-      const fr = critterFrames('npc:' + this.key, this.cfg, this.anim, this.view, 8);
+      const fr = critterFrames('npc:' + this.key, this.cfg, this.anim, this.view, 8, this.expression);
       out = flashFrames('npc:' + this.key + this.anim + this.view, fr, '#ffffff')[Math.floor(this.animT * fr.length) % fr.length];
     }
     const down = this.downT > 0;

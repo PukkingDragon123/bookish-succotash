@@ -118,8 +118,18 @@ export class Panels {
     r.panel(px, py, pw, ph);
     drawText(ctx, 'CRAFTING', px + 6, py + 5, P.ui, { scale: 1 });
     const station = game.nearStation();
-    drawText(ctx, station ? 'AT ' + station.toUpperCase() : 'NO STATION NEARBY', px + pw - 6, py + 5,
-      station ? P.uiGood : P.uiDim, { align: 'right' });
+    const camp = game.camp;
+    // Before anyone has built you anything, the useful thing to say is not
+    // "no station nearby" but who to go and ask.
+    let stationLabel, stationCol;
+    if (station) { stationLabel = 'AT ' + station.toUpperCase(); stationCol = P.uiGood; }
+    else if (camp && !camp.hasWorkbench) { stationLabel = 'NOTHING IS BUILT YET'; stationCol = P.uiWarn; }
+    else { stationLabel = 'NO STATION NEARBY'; stationCol = P.uiDim; }
+    drawText(ctx, stationLabel, px + pw - 6, py + 5, stationCol, { align: 'right' });
+    if (camp && !camp.hasWorkbench) {
+      drawText(ctx, 'GO AND ASK SOMEBODY TO BUILD A WORKBENCH. NOBODY OUT HERE OWES YOU ONE.',
+        px + 6, py + 15, P.uiDim);
+    }
     drawText(ctx, 'W/S SELECT   E CRAFT   TAB CLOSE', px + pw - 6, py + ph - 10, P.uiDim, { align: 'right' });
 
     const rowH = 15;

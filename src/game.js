@@ -40,12 +40,13 @@ import { TRUST_BOND } from './entities/wildlife.js';
 import { Campaign, CHAPTER } from './story/campaign.js';
 import { LAB_W, LAB_H } from './world/lab.js';
 import { FirstStand } from './story/firststand.js';
+import { Camp, STRUCTURES } from './systems/camp.js';
 
 export const STATE = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'dead', VICTORY: 'victory' };
 
 // The basin. Big enough that you can get properly lost in it and the far side
 // is a journey rather than a stroll.
-export const FOREST_W = 340, FOREST_H = 280;
+export const FOREST_W = 460, FOREST_H = 380;
 
 export class Game {
   constructor(canvas, seed) {
@@ -63,6 +64,7 @@ export class Game {
     this.campaign = null;
     this.firstStand = null;
     this.standDelay = 0;
+    this.camp = null;
     this.storyDone = false;
     this.time = 0;
     this.dayTime = 0.28;             // 0..1 through the day; starts mid-morning
@@ -152,6 +154,7 @@ export class Game {
     this.squad = new Squad();
     this.panels.mapDirty = true;
 
+    this.camp = new Camp(this.world.campSite || { x: this.world.den.x, y: this.world.den.y });
     this.player.respawn(this.world.den.x, this.world.den.y + 26);
     this.player.weapons = ['popper'];
     this.player.weaponIndex = 0;
@@ -308,6 +311,11 @@ export class Game {
       if (h.dead) this.hazards.splice(i, 1);
     }
     if (!lab) {
+      if (this.camp) { this.camp.update(sdt, this); this.updateCampWarmth(sdt); }
+      // Somebody notices when you are about to fall over.
+      if (this.player.hp < this.player.maxHp * 0.28 && chance(sdt * 0.16)) {
+        this.npcsReact('lowHp', 0.4, 200);
+      }
       for (const n of this.npcs) n.update(sdt, this);
       this.wildlife.update(sdt, this);
       this.squad.update(sdt, this);
@@ -1166,6 +1174,52 @@ export class Game {
     }
   }
 
+  /**
+   * The fire is not decoration. Standing at it puts you back together, which
+   * is the first concrete reason to have a camp at all.
+   */
+  updateCampWarmth(dt) {
+    if (!this.camp || !this.camp.has('firepit')) return;
+    const at = this.camp.siteFor('firepit');
+    const p = this.player;
+    if (p.dead || dist2(p.x, p.y, at.x, at.y) > 44 * 44) return;
+    if (p.hp < p.maxHp) {
+      // heal() deals in whole points, so bank the fraction between frames
+      this._warmth = (this._warmth || 0) + dt * 6;
+      if (this._warmth >= 1) {
+        const n = Math.floor(this._warmth);
+        this._warmth -= n;
+        p.heal(n, false);
+        if (chance(0.5)) particles.text(p.x + rnd(-6, 6), p.y - 20, '+', P.uiGood, { life: 0.7 });
+      }
+    }
+    p.energy = Math.min(p.maxEnergy, p.energy + dt * 14);
+  }
+
+  /**
+   * Everyone within earshot says something about what just happened. This is
+   * the difference between a basin full of quest markers and a basin full of
+   * neighbours.
+   */
+  npcsReact(kind, prob = 0.55, radius = 460) {
+    if (!this.npcs) return;
+    const p = this.player;
+    for (const n of this.npcs) {
+      if (dist2(n.x, n.y, p.x, p.y) > radius * radius) continue;
+      n.react(kind, this, prob);
+    }
+  }
+
+  /** A structure went up. Anything gated behind it opens now. */
+  onStructureBuilt(key, def) {
+    this.stats.built = (this.stats.built || 0) + 1;
+    this.panels.mapDirty = true;
+    if (key === 'firepit') {
+      this.toast('THE OTHERS WILL COME TO A FIRE. GO AND TALK TO THEM.', P.uiGood, 8);
+    }
+    for (const n of this.npcs) n.onCampChanged && n.onCampChanged(this, key);
+  }
+
   onQuestComplete(npc, req) {
     this.stats.questsDone++;
   }
@@ -1179,17 +1233,20 @@ export class Game {
     for (const pt of this.director.spawnPoints) {
       particles.ring(pt.x, pt.y, 6, 60, 0.9, P.nestEye, 2, true);
     }
+    this.npcsReact('waveIncoming', 0.5);
   }
 
   onWaveCleared(wave) {
     const bonus = 4 + wave;
     this.player.inv.add('ammo', bonus);
     this.toast('SALVAGE: +' + bonus + ' ROUNDS', P.uiGood, 2.4);
+    this.npcsReact('waveClear', 0.5);
   }
 
   onFireEventStart() {
     this.hitFlash = 0.6;
     this.r.camera.addShake(8);
+    this.npcsReact('fire', 0.85, 900);
   }
 
   onFireEventEnd() {
@@ -1322,6 +1379,8 @@ export class Game {
 
     // ground-layer hazards (mortar rings, firebomb markers)
     for (const h of this.hazards) if (h.layer === 'ground') h.draw(r, this);
+    // where the camp could be, if anyone would build it for you
+    if (!lab && this.camp) this.camp.drawGhosts(r, this);
 
     // y-sorted world
     const list = this.drawList;

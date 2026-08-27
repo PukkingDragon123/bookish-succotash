@@ -22,6 +22,9 @@ async function enterGame(page, opts = {}) {
         // minute. Tests that care about waves skip past it on purpose.
         await page.evaluate(() => {
           if (window.game.firstStand) window.game.firstStand.skip(window.game);
+          // Nothing is built at the start of a real run; the harness needs a
+          // workbench and a forge to test what happens at them.
+          if (window.game.camp) window.game.camp.grantAll(window.game);
         });
       }
       await page.waitForTimeout(200);

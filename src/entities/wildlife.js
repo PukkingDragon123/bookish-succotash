@@ -94,7 +94,28 @@ export class Animal {
     return h;
   }
 
-  frames(anim, view) { return beastFrames('b:' + this.key, this.cfg, anim, view, 8); }
+  frames(anim, view, expr) {
+    return beastFrames('b:' + this.key, this.cfg, anim, view, 8, expr || this.expression);
+  }
+
+  /**
+   * What its face is doing. Read off its situation rather than stored, so an
+   * animal that has just been shot at looks like one without anything having
+   * to remember to set a flag.
+   */
+  get expression() {
+    if (this.dead) return 'dead';
+    if (this.downT > 0) return 'hurt';
+    if (this.hp < this.maxHpStat * 0.35) return 'hurt';
+    if (this.state === 'panic' || this.state === 'flee') return 'afraid';
+    if (this.state === 'attack' || this.anim === 'attack' || this.anim === 'charge') return 'angry';
+    if (this.hurtT > 0.05) return 'hurt';
+    if (this.devoted && this.order === 'follow') return 'happy';
+    if (this.state === 'alert' || this.anim === 'alert') return 'alert';
+    if (this.anim === 'sniff') return 'curious';
+    if (this.bonded) return 'happy';
+    return 'calm';
+  }
 
   get sprite() {
     const fr = this.frames(this.anim, this.view);
@@ -233,7 +254,14 @@ export class Animal {
     } else if (this.panicT > 0) {
       this.state = 'panic';
     } else if (this.stateT <= 0) {
-      this.state = chance(0.5) ? 'graze' : chance(0.5) ? 'wander' : 'alert';
+      // A wider idle repertoire, weighted so an animal mostly does the thing
+      // its species actually does all day.
+      const roll = chance(0.42) ? 'graze'
+        : chance(0.45) ? 'wander'
+        : chance(0.4) ? 'alert'
+        : chance(0.5) ? 'sniff'
+        : chance(0.6) ? 'groom' : 'shake';
+      this.state = roll;
       this.stateT = rnd(1.8, 5);
       this.dir = rnd(TAU);
     }
@@ -241,6 +269,10 @@ export class Animal {
     switch (this.state) {
       case 'graze': this.anim = 'graze'; break;
       case 'alert': this.anim = 'alert'; break;
+      // standing behaviours: no movement, just something to watch
+      case 'sniff': this.anim = 'sniff'; break;
+      case 'groom': this.anim = 'groom'; break;
+      case 'shake': this.anim = 'shake'; break;
       case 'wander': {
         speed = this.speedStat * 0.36;
         const home = Math.atan2(this.hy - this.y, this.hx - this.x);

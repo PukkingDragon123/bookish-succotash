@@ -20,6 +20,9 @@ async function enterGame(page, opts = {}) {
         // minute. Tests that care about waves skip past it on purpose.
         await page.evaluate(() => {
           if (window.game.firstStand) window.game.firstStand.skip(window.game);
+          // Nothing is built at the start of a real run; the harness needs a
+          // workbench and a forge to test what happens at them.
+          if (window.game.camp) window.game.camp.grantAll(window.game);
         });
       }
       await page.waitForTimeout(200);
@@ -49,6 +52,60 @@ async function check(name, fn, waitMs = 0) {
 }
 
 // --- gathering: chop a tree, get wood, respect the 10 cap -------------------
+// --- the camp you have to ask for ------------------------------------------
+await check('you arrive with nothing built', () => {
+  const g = window.game;
+  const stations = g.world.props.filter(x => x.type === 'station').length;
+  const dens = g.world.props.filter(x => x.type === 'den').length;
+  // the harness granted the camp on entry, so check the definition instead:
+  // a fresh Camp knows nothing is up yet
+  const fresh = new (g.camp.constructor)({ x: 0, y: 0 });
+  return { ok: !fresh.hasWorkbench && !fresh.hasForge && !fresh.hasDen && fresh.count === 0,
+    built: fresh.count, stationsNow: stations, densNow: dens };
+});
+
+await check('asking a neighbour raises a structure', async () => {
+  const g = window.game;
+  // wind the camp back to nothing and do it the long way
+  const campKinds = new Set(['firepit', 'workbench', 'forge', 'den', 'logPile', 'crate']);
+  g.world.props = g.world.props.filter(x => !campKinds.has(x.kind));
+  g.world.rebuildGrid();
+  g.camp.built.clear();
+  g.camp.building = null;
+  const n = g.npcs.find(x => x.key === 'ember');
+  g.player.x = n.x + 14; g.player.y = n.y;
+  g.player.inv.items.wood = 30; g.player.inv.items.stone = 30;
+  g.player.wood = 30;                      // logs ride on your back, not in a bag
+  const offered = n.buildOfferFor(g);
+  n.interact(g);
+  n.interact(g);
+  window.__builder = n;
+  return { ok: offered === 'firepit' && n.quest && n.quest.structure === 'firepit',
+    offered, state: n.state };
+}, 400);
+
+await page.waitForTimeout(16000);
+await check('they walk over and build it for real', () => {
+  const g = window.game;
+  const pit = g.world.props.find(x => x.kind === 'firepit');
+  return { ok: g.camp.has('firepit') && !!pit, built: [...g.camp.built], prop: !!pit };
+});
+
+await check('crafting is gated until the bench exists', () => {
+  const g = window.game;
+  const rec = g.panels.availableRecipes(g).find(r => r.station === 'workbench');
+  if (!rec) return { ok: true, why: 'no workbench recipes listed' };
+  g.player.x = g.camp.site.x; g.player.y = g.camp.site.y;
+  const can = g.canCraft(rec);
+  return { ok: !can.ok, why: can.why };
+});
+
+await check('the harness can raise the whole camp', () => {
+  const g = window.game;
+  g.camp.grantAll(g);
+  return { ok: g.camp.hasWorkbench && g.camp.hasForge && g.camp.hasDen, built: g.camp.count };
+});
+
 await check('chop tree -> wood, capped at 10', () => {
   const g = window.game;
   const p = g.player;

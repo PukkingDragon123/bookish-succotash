@@ -7,15 +7,19 @@ import { clamp, damp, snap } from './math.js';
 // Internal resolution. These are LIVE module bindings: `resize()` reassigns
 // them so the game fills whatever screen it lands on — a 16:9 monitor, a 4:3
 // iPad, a phone held sideways — instead of letterboxing a fixed 480x270 box.
-export let VIEW_W = 480;
-export let VIEW_H = 270;
+export let VIEW_W = 640;
+export let VIEW_H = 400;
 
-// Roughly how many CSS pixels one game pixel should occupy. Bigger = chunkier
-// art and less world on screen; this is the knob that keeps sprites readable on
-// a small phone and stops a 4K monitor from showing half the map.
-const TARGET_PX = 260;
-const MIN_H = 170, MAX_H = 380;
-const MIN_W = 240, MAX_W = 660;
+// Roughly how many game pixels tall the picture should be. Bigger = more of
+// the basin on screen and a smaller ferret in the middle of it; this is the
+// knob that decides how much world you can see at once.
+//
+// It went up when the sprites did. The art now carries enough detail to stand
+// being further away, and standing further away is what makes a forest feel
+// like a forest rather than a corridor of trees.
+const TARGET_PX = 420;
+const MIN_H = 240, MAX_H = 560;
+const MIN_W = 340, MAX_W = 980;
 
 const evenDown = (v) => Math.max(2, Math.floor(v / 2) * 2);
 

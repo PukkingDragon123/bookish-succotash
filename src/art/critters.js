@@ -6,7 +6,7 @@
 
 import { surface, ell, ellShaded, circ, rect, px, line, capsule, taper, tri, speckle, outline, shade, getSheet } from './pixel.js';
 import { P } from './palette.js';
-import { TAU } from '../engine/math.js';
+import { TAU, clamp } from '../engine/math.js';
 import { hash2 } from '../engine/rng.js';
 
 // --- pose curves -----------------------------------------------------------
@@ -30,6 +30,94 @@ function poseFor(anim, t) {
       p.ear = t > 0.72 && t < 0.82 ? 1 : 0;
       p.blink = t > 0.88 ? 1 : 0;
       break;
+    // Hammering, sawing, hauling a beam into place. Used whenever someone is
+    // building the camp for you, which in the opening hour is most of the time.
+    case 'work': {
+      const swing = Math.sin(a * 2);
+      p.arm = 3.4 + swing * 4.6;
+      p.lean = 1.2 + Math.max(0, swing) * 0.9;
+      p.bob = Math.abs(swing) * -0.8;
+      p.head = 0.9 + swing * 0.5;
+      p.headTilt = 0.24;
+      p.sqy = 1 - Math.max(0, swing) * 0.06;
+      p.tail = Math.sin(a) * 0.9;
+      p.crouch = 1.2;
+      break;
+    }
+
+    // Gesturing while they speak. Small, but a static NPC talking at you reads
+    // as a vending machine and one that moves reads as a person.
+    case 'talk':
+      p.bob = Math.sin(a * 2) * 0.5;
+      p.arm = Math.sin(a * 3) * 2.6 + 1.4;
+      p.head = Math.sin(a * 2.4) * 0.7;
+      p.headTilt = Math.sin(a * 1.6) * 0.14;
+      p.tail = Math.sin(a * 1.2) * 1.1;
+      p.tailLift = 0.8;
+      p.ear = t > 0.5 && t < 0.62 ? 1 : 0;
+      break;
+
+    case 'wave':
+      p.arm = 5 + Math.sin(a * 4) * 3.4;
+      p.lean = -0.6;
+      p.bob = Math.sin(a * 2) * 0.6;
+      p.head = -0.6;
+      p.ear = 1;
+      break;
+
+    // Hauling: leaning into the weight, short choppy steps.
+    case 'carry':
+      p.legA = Math.sin(a) * 0.7;
+      p.legB = Math.sin(a + Math.PI) * 0.7;
+      p.bob = Math.abs(Math.sin(a)) * -0.7;
+      p.lean = 1.8;
+      p.crouch = 1.6;
+      p.arm = 4.2;
+      p.head = 1.2;
+      p.headTilt = 0.16;
+      break;
+
+    case 'cheer':
+      p.arm = 6.4 + Math.sin(a * 5) * 2;
+      p.bob = -Math.abs(Math.sin(a * 3)) * 2.6;
+      p.head = -1.4;
+      p.tail = Math.sin(a * 6) * 2.4;
+      p.tailLift = 2.4;
+      p.ear = 1;
+      break;
+
+    // Down on one knee behind cover, gun up. What a recruit does in a wave.
+    case 'aim':
+      p.crouch = 3.4;
+      p.lean = 1.4;
+      p.arm = 5.6;
+      p.head = 0.4;
+      p.bob = Math.sin(a * 2) * 0.25;
+      p.sqy = 0.94;
+      break;
+
+    case 'sleep':
+      p.crouch = 5;
+      p.sqy = 0.6;
+      p.sqx = 1.24;
+      p.head = 3.4;
+      p.headTilt = 0.5;
+      p.blink = 1;
+      p.bob = Math.sin(a * 0.6) * 0.5;
+      p.tail = 1.6;
+      break;
+
+    // A sharp recoil away from whatever just hit you.
+    case 'flinch': {
+      const q = Math.sin(Math.min(1, t * 2.2) * Math.PI);
+      p.lean = -q * 3.2;
+      p.head = q * 2;
+      p.crouch = q * 2.4;
+      p.blink = q > 0.4 ? 1 : 0;
+      p.arm = -q * 2;
+      break;
+    }
+
     case 'walk':
       p.legA = Math.sin(a);
       p.legB = Math.sin(a + Math.PI);
@@ -114,8 +202,43 @@ const BASE = {
   scale: 1,
 };
 
+// How a face is set. Rides on top of whatever the body is doing, so a ferret
+// can be sprinting and furious, or standing still and pleased with itself.
+const FACE = {
+  calm:    { lid: 0.15, brow: 0, mouth: 'closed', ear: 0, squint: 0 },
+  alert:   { lid: 0,    brow: 0.5, mouth: 'closed', ear: 1, squint: 0 },
+  curious: { lid: 0,    brow: 0.3, mouth: 'ajar', ear: 1, squint: 0 },
+  happy:   { lid: 0.45, brow: 0.1, mouth: 'smile', ear: 1, squint: 0.5 },
+  angry:   { lid: 0.4,  brow: -1, mouth: 'snarl', ear: -1, squint: 0.4 },
+  afraid:  { lid: -0.1, brow: 0.9, mouth: 'ajar', ear: -1, squint: 0 },
+  hurt:    { lid: 0.6,  brow: 0.6, mouth: 'open', ear: -1, squint: 0.35 },
+  focused: { lid: 0.35, brow: -0.5, mouth: 'closed', ear: 0, squint: 0.2 },
+  sad:     { lid: 0.5,  brow: 0.7, mouth: 'frown', ear: -1, squint: 0.1 },
+  talk:    { lid: 0.1,  brow: 0.2, mouth: 'talk', ear: 0, squint: 0 },
+  dead:    { lid: 0.9,  brow: 0, mouth: 'ajar', ear: -1, squint: 0 },
+};
+export const FACE_KEYS = Object.keys(FACE);
+
+// Everything this rig draws is scaled up by this much. The camera pulled back
+// when the wildlife got its detail pass, and the player and the NPCs have to
+// come with it or the ferret ends up a thumbnail in its own game.
+export const DETAIL = 1.5;
+
+// Geometry fields, as opposed to flags and colours. Only these get scaled.
+const DIMS = [
+  'bodyW', 'bodyH', 'headR', 'neck', 'snout', 'snoutDrop',
+  'earSize', 'earSpread', 'tailLen', 'tailR',
+  'legLen', 'legR', 'legSpread', 'hump',
+];
+
 function resolve(cfg) {
   const c = Object.assign({}, BASE, cfg);
+  const k = DETAIL * (cfg.scale || 1);
+  for (const d of DIMS) c[d] = (c[d] || 0) * k;
+  // Eyes grow more slowly than the skull, or every face turns into a doll's.
+  c.eyeR = (c.eyeR || 1) * (1 + (k - 1) * 0.5);
+  if (c.stitches) c.stitches = c.stitches.map(([a, b]) => [a * k, b * k]);
+  c._k = k;
   c.colors = Object.assign({}, BASE.colors, cfg.colors || {});
   const col = c.colors;
   if (!col.light) col.light = shade(col.body, 0.16);
@@ -137,7 +260,8 @@ export function critterSize(cfg) {
  * Draw one creature frame into ctx. Origin is bottom-centre of the canvas
  * (the feet), so world drawing can just anchor by ground position.
  */
-export function drawCritter(ctx, cfgRaw, anim, t, view = 'front') {
+export function drawCritter(ctx, cfgRaw, anim, t, view = 'front', exprName = 'calm') {
+  const face = FACE[exprName] || FACE.calm;
   const c = resolve(cfgRaw);
   const col = c.colors;
   const p = poseFor(anim, t);
@@ -324,30 +448,78 @@ export function drawCritter(ctx, cfgRaw, anim, t, view = 'front') {
     }
 
     // eyes
-    const eyeY = headY - c.headR * 0.05;
+    const eyeY = headY - c.headR * 0.05 - face.squint * 0.4;
     const eyeDX = c.headR * 0.5;
-    if (p.blink) {
-      rect(ctx, headX - eyeDX - c.eyeR, eyeY, c.eyeR * 2 + 1, 1, col.dark);
-      rect(ctx, headX + eyeDX - c.eyeR, eyeY, c.eyeR * 2 + 1, 1, col.dark);
+    const lid = clamp(face.lid + (p.blink ? 1 : 0), 0, 1);
+    const shut = lid > 0.88;
+
+    // the organic eye
+    if (shut) {
+      // a closed lid is a curve, not a flat bar: it is the difference between
+      // asleep and switched off
+      line(ctx, headX - eyeDX - c.eyeR, eyeY, headX - eyeDX, eyeY + 0.8, col.dark);
+      line(ctx, headX - eyeDX, eyeY + 0.8, headX - eyeDX + c.eyeR, eyeY, col.dark);
     } else {
-      circ(ctx, headX - eyeDX, eyeY, c.eyeR, col.eye);
-      if (c.eyeR > 1) px(ctx, Math.round(headX - eyeDX - 0.4), Math.round(eyeY - 0.6), P.white);
-      if (c.cyberEye) {
-        // The lab's parting gift: a hard-edged optic with a hot core.
-        rect(ctx, headX + eyeDX - c.eyeR - 1, eyeY - c.eyeR - 1, c.eyeR * 2 + 3, c.eyeR * 2 + 3, P.nestSteelDk);
-        rect(ctx, headX + eyeDX - c.eyeR, eyeY - c.eyeR, c.eyeR * 2 + 1, c.eyeR * 2 + 1, P.cyberDim);
-        circ(ctx, headX + eyeDX, eyeY, Math.max(0.9, c.eyeR * 0.8), P.cyber);
-        px(ctx, Math.round(headX + eyeDX), Math.round(eyeY), P.cyberHot);
-        px(ctx, Math.round(headX + eyeDX + c.eyeR + 1), Math.round(eyeY - c.eyeR - 1), P.cyberHot);
-      } else {
-        circ(ctx, headX + eyeDX, eyeY, c.eyeR, col.eye);
-        if (c.eyeR > 1) px(ctx, Math.round(headX + eyeDX - 0.4), Math.round(eyeY - 0.6), P.white);
+      const openH = Math.max(0.8, c.eyeR * (1 - lid * 0.72));
+      ell(ctx, headX - eyeDX, eyeY, c.eyeR, openH, col.eye);
+      if (c.eyeR > 1 && openH > 1) px(ctx, Math.round(headX - eyeDX - 0.4), Math.round(eyeY - openH * 0.4), P.white);
+      if (lid > 0.12) rect(ctx, headX - eyeDX - c.eyeR, eyeY - c.eyeR, c.eyeR * 2 + 1, Math.max(1, c.eyeR * lid), col.body);
+    }
+
+    // the other one
+    if (c.cyberEye) {
+      // The lab's parting gift. It has no eyelid, so it stares straight
+      // through a blink and through every expression on the face.
+      rect(ctx, headX + eyeDX - c.eyeR - 1, eyeY - c.eyeR - 1, c.eyeR * 2 + 3, c.eyeR * 2 + 3, P.nestSteelDk);
+      rect(ctx, headX + eyeDX - c.eyeR, eyeY - c.eyeR, c.eyeR * 2 + 1, c.eyeR * 2 + 1, P.cyberDim);
+      circ(ctx, headX + eyeDX, eyeY, Math.max(0.9, c.eyeR * 0.8), P.cyber);
+      px(ctx, Math.round(headX + eyeDX), Math.round(eyeY), P.cyberHot);
+      px(ctx, Math.round(headX + eyeDX + c.eyeR + 1), Math.round(eyeY - c.eyeR - 1), P.cyberHot);
+    } else if (shut) {
+      line(ctx, headX + eyeDX - c.eyeR, eyeY, headX + eyeDX, eyeY + 0.8, col.dark);
+      line(ctx, headX + eyeDX, eyeY + 0.8, headX + eyeDX + c.eyeR, eyeY, col.dark);
+    } else {
+      const openH = Math.max(0.8, c.eyeR * (1 - lid * 0.72));
+      ell(ctx, headX + eyeDX, eyeY, c.eyeR, openH, col.eye);
+      if (c.eyeR > 1 && openH > 1) px(ctx, Math.round(headX + eyeDX - 0.4), Math.round(eyeY - openH * 0.4), P.white);
+      if (lid > 0.12) rect(ctx, headX + eyeDX - c.eyeR, eyeY - c.eyeR, c.eyeR * 2 + 1, Math.max(1, c.eyeR * lid), col.body);
+    }
+
+    // Brows. Angled in toward the nose is anger, up and out is fear, and that
+    // one pair of pixels does most of the emotional work on a face this size.
+    const browAmt = face.brow || (c.brow ? 0.2 : 0);
+    if (Math.abs(browAmt) > 0.05 || c.brow) {
+      const base = eyeY - c.eyeR - 1 + (c.brow || 0);
+      for (const side of [-1, 1]) {
+        const ex = headX + side * eyeDX;
+        const inner = base - browAmt;
+        const outer = base + browAmt;
+        line(ctx, ex - 1.5, side > 0 ? inner : outer, ex + 1.5, side > 0 ? outer : inner, col.dark);
       }
     }
-    // brow line gives every face an attitude
-    if (c.brow) {
-      rect(ctx, headX - eyeDX - 1.4, eyeY - c.eyeR - 1 + c.brow, 3, 1, col.dark);
-      rect(ctx, headX + eyeDX - 1.4, eyeY - c.eyeR - 1 + c.brow, 3, 1, col.dark);
+
+    // Mouth, on the snout.
+    const mx = headX + dir * (c.headR * 0.42 + c.snout * 0.5);
+    const my = headY + c.snoutDrop + c.headR * 0.34;
+    if (face.mouth === 'snarl') {
+      line(ctx, mx - dir * 2.4, my, mx + dir * 0.6, my + 0.8, col.dark);
+      px(ctx, Math.round(mx - dir * 1.6), Math.round(my - 0.6), P.white);
+      px(ctx, Math.round(mx - dir * 0.4), Math.round(my - 0.6), P.white);
+    } else if (face.mouth === 'open') {
+      ell(ctx, mx - dir * 0.8, my + 0.4, 1.5, 1.2, '#3a1a1a');
+    } else if (face.mouth === 'talk') {
+      const o = 0.6 + Math.abs(Math.sin(t * TAU * 3)) * 1.1;
+      ell(ctx, mx - dir * 0.8, my + 0.3, 1.3, o, '#3a1a1a');
+    } else if (face.mouth === 'smile') {
+      line(ctx, mx - dir * 2.2, my - 0.4, mx - dir * 0.8, my + 0.6, col.dark);
+      line(ctx, mx - dir * 0.8, my + 0.6, mx + dir * 0.6, my - 0.2, col.dark);
+    } else if (face.mouth === 'frown') {
+      line(ctx, mx - dir * 2.2, my + 0.6, mx - dir * 0.8, my - 0.3, col.dark);
+      line(ctx, mx - dir * 0.8, my - 0.3, mx + dir * 0.6, my + 0.5, col.dark);
+    } else if (face.mouth === 'ajar') {
+      line(ctx, mx - dir * 1.8, my, mx + dir * 0.4, my + 0.4, col.dark);
+    } else {
+      line(ctx, mx - dir * 1.6, my, mx + dir * 0.2, my + 0.2, col.dark);
     }
   } else {
     // back of the head: just the skull shading plus ear backs
@@ -406,6 +578,16 @@ function drawGear(ctx, c, p, m) {
     ell(ctx, cx - c.bodyW * 0.8 * dir, bodyCy - bodyH * 0.3, bodyW * 0.42, bodyH * 0.8, g.pack);
     rect(ctx, cx - c.bodyW * 0.8 * dir - 1, bodyCy - bodyH * 0.3, 3, 1, shade(g.pack, -0.3));
   }
+  // A working belt, and something hanging off it. Small, but it is the
+  // difference between an animal and somebody with a job.
+  if (g.belt) {
+    rect(ctx, cx - bodyW * 0.56, bodyCy + bodyH * 0.34, bodyW * 1.12, 1.6, g.belt);
+    rect(ctx, cx - 1, bodyCy + bodyH * 0.3, 2.4, 2.6, shade(g.belt, 0.28));
+  }
+  if (g.pouch) {
+    ell(ctx, cx - c.bodyW * 0.55 * dir, bodyCy + bodyH * 0.42, bodyW * 0.24, bodyH * 0.34, g.pouch);
+    rect(ctx, cx - c.bodyW * 0.55 * dir - bodyW * 0.24, bodyCy + bodyH * 0.28, bodyW * 0.48, 1, shade(g.pouch, -0.3));
+  }
   if (g.hat === 'ranger') {
     rect(ctx, headX - r * 1.5, headY - r * 0.75, r * 3, 1.4, g.hatColor || P.poachCoat);
     tri(ctx, headX - r * 0.9, headY - r * 0.7, headX + r * 0.9, headY - r * 0.7, headX, headY - r * 2.2, g.hatColor || P.poachCoat);
@@ -440,13 +622,13 @@ function drawGear(ctx, c, p, m) {
 }
 
 /** Bake an animation for one species/view. */
-export function critterFrames(key, cfg, anim, view = 'front', frameCount = 8) {
-  return getSheet(`critter:${key}:${anim}:${view}:${frameCount}`, () => {
+export function critterFrames(key, cfg, anim, view = 'front', frameCount = 8, expr = 'calm') {
+  return getSheet(`critter:${key}:${anim}:${view}:${frameCount}:${expr}`, () => {
     const { w, h } = critterSize(cfg);
     const frames = [];
     for (let i = 0; i < frameCount; i++) {
       const ctx = surface(w, h);
-      drawCritter(ctx, cfg, anim, i / frameCount, view);
+      drawCritter(ctx, cfg, anim, i / frameCount, view, expr);
       outline(ctx, cfg.outlineColor || P.black);
       frames.push(ctx.canvas);
     }

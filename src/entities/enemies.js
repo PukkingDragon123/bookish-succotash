@@ -143,7 +143,10 @@ export class Enemy {
 
   get frames() {
     if (this.def.art === 'critter') {
-      return critterFrames('human:' + this.def.species, HUMANS[this.def.species].cfg, this.anim, this.view, 8);
+      // The people who work for Les Nest only ever wear two faces: doing
+      // the job, and having the job go wrong.
+      const face = this.hp < this.maxHp * 0.35 ? 'afraid' : this.telegraph > 0 ? 'angry' : 'focused';
+      return critterFrames('human:' + this.def.species, HUMANS[this.def.species].cfg, this.anim, this.view, 8, face);
     }
     return machineFrames(this.def.species);
   }

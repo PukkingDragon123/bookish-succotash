@@ -16,6 +16,179 @@ const STICK_R = 24;     // outer ring radius, scaled below
 const KNOB_R = 9;
 const DEAD = 0.14;
 
+/**
+ * Button glyphs, drawn rather than lettered.
+ *
+ * A three-letter label works on a desk. On a phone, under a thumb, at a glance,
+ * during a firefight, it does not: you need a shape you can recognise without
+ * reading it. Each of these draws into a circle of radius `r` centred on
+ * (x, y), in a single colour, so the button can tint the whole icon by state.
+ */
+const ICONS = {
+  // a paw print: move, gather, the general "do the thing" button
+  interact(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    const p = r * 0.34;
+    ell2(ctx, x, y + p * 0.5, p * 0.95, p * 0.8);
+    for (let i = 0; i < 4; i++) {
+      const a = -2.5 + i * 0.62;
+      ell2(ctx, x + Math.cos(a) * p * 1.25, y + Math.sin(a) * p * 1.25 - p * 0.2, p * 0.42, p * 0.5);
+    }
+  },
+  // a claw slash: three raking lines
+  melee(ctx, x, y, r, c) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, r * 0.14);
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x - r * 0.5 + i * r * 0.26, y - r * 0.52);
+      ctx.quadraticCurveTo(x + i * r * 0.24, y, x + r * 0.42 + i * r * 0.24, y + r * 0.54);
+      ctx.stroke();
+    }
+  },
+  // motion lines behind a chevron: dash
+  dash(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    tri2(ctx, x - r * 0.1, y - r * 0.52, x - r * 0.1, y + r * 0.52, x + r * 0.56, y);
+    ctx.fillRect(Math.round(x - r * 0.62), Math.round(y - r * 0.34), Math.max(1, r * 0.26), Math.max(1, r * 0.16));
+    ctx.fillRect(Math.round(x - r * 0.72), Math.round(y - r * 0.08), Math.max(1, r * 0.34), Math.max(1, r * 0.16));
+    ctx.fillRect(Math.round(x - r * 0.62), Math.round(y + r * 0.18), Math.max(1, r * 0.26), Math.max(1, r * 0.16));
+  },
+  // a pulsing eye: the lab optic
+  scan(ctx, x, y, r, c) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, r * 0.13);
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * 0.56, r * 0.34, 0, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = c;
+    ell2(ctx, x, y, r * 0.2, r * 0.2);
+  },
+  // a droplet
+  douse(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    tri2(ctx, x, y - r * 0.6, x - r * 0.4, y + r * 0.16, x + r * 0.4, y + r * 0.16);
+    ell2(ctx, x, y + r * 0.16, r * 0.4, r * 0.4);
+  },
+  // a berry on a stem: eat
+  use(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ell2(ctx, x - r * 0.2, y + r * 0.14, r * 0.3, r * 0.3);
+    ell2(ctx, x + r * 0.24, y + r * 0.2, r * 0.26, r * 0.26);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.1, y - r * 0.1);
+    ctx.lineTo(x + r * 0.16, y - r * 0.54);
+    ctx.stroke();
+  },
+  // a puff
+  smoke(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ell2(ctx, x - r * 0.26, y + r * 0.1, r * 0.3, r * 0.26);
+    ell2(ctx, x + r * 0.2, y + r * 0.16, r * 0.26, r * 0.22);
+    ell2(ctx, x, y - r * 0.22, r * 0.34, r * 0.3);
+  },
+  // a stubby gun
+  weapon(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x - r * 0.56), Math.round(y - r * 0.16), Math.round(r * 1.1), Math.max(1, r * 0.3));
+    ctx.fillRect(Math.round(x - r * 0.42), Math.round(y + r * 0.1), Math.max(1, r * 0.24), Math.max(1, r * 0.44));
+    ctx.fillRect(Math.round(x + r * 0.34), Math.round(y - r * 0.34), Math.max(1, r * 0.2), Math.max(1, r * 0.2));
+  },
+  // a flame: overclock burns you for power
+  overclock(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x, y - r * 0.62);
+    ctx.quadraticCurveTo(x + r * 0.52, y - r * 0.05, x + r * 0.26, y + r * 0.3);
+    ctx.quadraticCurveTo(x + r * 0.1, y + r * 0.58, x - r * 0.06, y + r * 0.56);
+    ctx.quadraticCurveTo(x - r * 0.48, y + r * 0.3, x - r * 0.22, y - r * 0.16);
+    ctx.quadraticCurveTo(x - r * 0.14, y - r * 0.36, x, y - r * 0.62);
+    ctx.fill();
+  },
+  // a hammer and a plank: crafting
+  craft(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x - r * 0.5), Math.round(y - r * 0.5), Math.round(r * 0.62), Math.max(1, r * 0.3));
+    ctx.fillRect(Math.round(x - r * 0.28), Math.round(y - r * 0.24), Math.max(1, r * 0.2), Math.round(r * 0.72));
+    ctx.fillRect(Math.round(x - r * 0.56), Math.round(y + r * 0.42), Math.round(r * 1.12), Math.max(1, r * 0.2));
+  },
+  // a chip: four legs and a die
+  chips(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x - r * 0.34), Math.round(y - r * 0.34), Math.round(r * 0.68), Math.round(r * 0.68));
+    for (let i = -1; i <= 1; i++) {
+      ctx.fillRect(Math.round(x + i * r * 0.24 - r * 0.05), Math.round(y - r * 0.56), Math.max(1, r * 0.12), Math.max(1, r * 0.2));
+      ctx.fillRect(Math.round(x + i * r * 0.24 - r * 0.05), Math.round(y + r * 0.36), Math.max(1, r * 0.12), Math.max(1, r * 0.2));
+    }
+  },
+  // a folded map
+  map(ctx, x, y, r, c) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, r * 0.13);
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.54, y - r * 0.3);
+    ctx.lineTo(x - r * 0.18, y - r * 0.5);
+    ctx.lineTo(x + r * 0.18, y - r * 0.3);
+    ctx.lineTo(x + r * 0.54, y - r * 0.5);
+    ctx.lineTo(x + r * 0.54, y + r * 0.36);
+    ctx.lineTo(x + r * 0.18, y + r * 0.54);
+    ctx.lineTo(x - r * 0.18, y + r * 0.36);
+    ctx.lineTo(x - r * 0.54, y + r * 0.54);
+    ctx.closePath();
+    ctx.stroke();
+  },
+  // three dots in formation: squad command
+  command(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ell2(ctx, x, y - r * 0.34, r * 0.19, r * 0.19);
+    ell2(ctx, x - r * 0.38, y + r * 0.26, r * 0.19, r * 0.19);
+    ell2(ctx, x + r * 0.38, y + r * 0.26, r * 0.19, r * 0.19);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, r * 0.09);
+    ctx.beginPath();
+    ctx.moveTo(x, y - r * 0.34); ctx.lineTo(x - r * 0.38, y + r * 0.26);
+    ctx.lineTo(x + r * 0.38, y + r * 0.26); ctx.closePath();
+    ctx.stroke();
+  },
+  // an arrow curling home: rally
+  rally(ctx, x, y, r, c) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, r * 0.14);
+    ctx.beginPath();
+    ctx.arc(x, y + r * 0.08, r * 0.42, Math.PI * 0.15, Math.PI * 1.7);
+    ctx.stroke();
+    ctx.fillStyle = c;
+    tri2(ctx, x + r * 0.5, y - r * 0.34, x + r * 0.12, y - r * 0.28, x + r * 0.44, y + r * 0.08);
+  },
+  // pause bars
+  pause(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x - r * 0.34), Math.round(y - r * 0.42), Math.max(1, r * 0.22), Math.round(r * 0.84));
+    ctx.fillRect(Math.round(x + r * 0.12), Math.round(y - r * 0.42), Math.max(1, r * 0.22), Math.round(r * 0.84));
+  },
+  // four corner brackets: fullscreen
+  fullscreen(ctx, x, y, r, c) {
+    ctx.fillStyle = c;
+    const t = Math.max(1, r * 0.16), l = r * 0.42, o = r * 0.48;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        ctx.fillRect(Math.round(x + sx * o - (sx > 0 ? l : 0)), Math.round(y + sy * o - (sy > 0 ? t : 0)), Math.round(l), Math.round(t));
+        ctx.fillRect(Math.round(x + sx * o - (sx > 0 ? t : 0)), Math.round(y + sy * o - (sy > 0 ? l : 0)), Math.round(t), Math.round(l));
+      }
+    }
+  },
+};
+
+// tiny local helpers, so the icon table stays readable
+function ell2(ctx, cx, cy, rx, ry) {
+  ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(0.5, rx), Math.max(0.5, ry), 0, 0, TAU); ctx.fill();
+}
+function tri2(ctx, x0, y0, x1, y1, x2, y2) {
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.closePath(); ctx.fill();
+}
+
 export class TouchControls {
   constructor(canvas) {
     this.canvas = canvas;
@@ -43,35 +216,49 @@ export class TouchControls {
    * aspect ratio, and scale with the internal resolution.
    */
   _layout() {
-    const s = this.scale = clamp(VIEW_H / 270, 0.78, 1.5);
-    const R = (v) => Math.round(v * s);
+    // Buttons are sized in real screen pixels, not internal ones. A thumb is
+    // about 44 CSS pixels across whatever resolution the game happens to be
+    // rendering at, and a control that is the right size on an iPad and half
+    // that on a phone is a control that only works on an iPad.
+    const rect = this.canvas.getBoundingClientRect();
+    const disp = rect.width > 0 ? rect.width / Math.max(1, this.canvas.width) : 1;
+    const s = this.scale = clamp((1 / disp) * 2.15, 0.9, 4.2);
+
     const W = VIEW_W, H = VIEW_H;
-    const bigR = R(16), midR = R(13), smallR = R(10);
+    const bigR = Math.round(17 * s), midR = Math.round(13.5 * s), smallR = Math.round(10.5 * s);
+    const gap = Math.round(5 * s);
+    // Everything is placed off its own radius, so the margins hold at every
+    // scale instead of the cluster sliding off the corner on a dense screen.
+    const rightX = W - bigR - gap;
+    const bottomY = H - bigR - gap;
 
     this.buttons = [
-      // right thumb cluster
-      { action: 'dash',     label: 'DSH', x: W - R(26), y: H - R(26), r: bigR, tint: '#4de1ff' },
-      { action: 'melee',    label: 'CLW', x: W - R(58), y: H - R(20), r: midR, tint: '#ff8a5a' },
-      { action: 'interact', label: 'E',   x: W - R(24), y: H - R(60), r: midR, tint: '#8ac47a' },
-      { action: 'overclock',label: 'OC',  x: W - R(56), y: H - R(50), r: smallR, tint: '#b8f5ff', toggle: true },
-      // utility column, right edge
-      { action: 'scan',     label: 'Q',  x: W - R(13), y: H - R(96),  r: smallR, tint: '#4de1ff' },
-      { action: 'douse',    label: 'H2O', x: W - R(13), y: H - R(120), r: smallR, tint: '#a7d8e6' },
-      { action: 'use',      label: 'EAT', x: W - R(13), y: H - R(144), r: smallR, tint: '#7fd48a' },
-      { action: 'smoke',    label: 'SMK', x: W - R(13), y: H - R(168), r: smallR, tint: '#8a9483' },
-      // left edge: weapon + squad
-      { action: 'weapon',   label: 'GUN', x: R(15), y: H - R(26), r: midR, tint: '#e8d7b0' },
-      { action: 'command',  label: 'CMD', x: R(15), y: H - R(58), r: smallR, tint: '#f0c05a', toggle: true },
-      { action: 'rally',    label: 'RLY', x: R(15), y: H - R(82), r: smallR, tint: '#f0c05a' },
-      // top row
-      { action: 'craft',    label: 'CRF', x: W - R(13), y: R(13), r: smallR, tint: '#e8d7b0' },
-      { action: 'chips',    label: 'CHP', x: W - R(37), y: R(13), r: smallR, tint: '#4de1ff' },
-      { action: 'map',      label: 'MAP', x: W - R(61), y: R(13), r: smallR, tint: '#8ac47a' },
-      { action: 'pause',    label: '||',  x: W - R(85), y: R(13), r: smallR, tint: '#8a9483' },
-      { action: 'fullscreen', label: 'FS', x: W - R(109), y: R(13), r: smallR, tint: '#8a9483' },
+      // right thumb: the things you press in a fight
+      { action: 'dash',     label: 'DSH', x: rightX, y: bottomY, r: bigR, tint: '#4de1ff' },
+      { action: 'melee',    label: 'CLW', x: rightX - bigR - midR - gap, y: bottomY + Math.round(2 * s), r: midR, tint: '#ff8a5a' },
+      { action: 'interact', label: 'E',   x: rightX + Math.round(2 * s), y: bottomY - bigR - midR - gap, r: midR, tint: '#8ac47a' },
+      { action: 'overclock', label: 'OC', x: rightX - bigR - smallR - gap * 2, y: bottomY - midR - smallR - gap, r: smallR, tint: '#b8f5ff', toggle: true },
+
+      // utility column up the right edge
+      { action: 'scan',  label: 'Q',   x: W - smallR - gap, y: bottomY - bigR - midR * 2 - smallR - gap * 3, r: smallR, tint: '#4de1ff' },
+      { action: 'douse', label: 'H2O', x: W - smallR - gap, y: bottomY - bigR - midR * 2 - smallR * 3 - gap * 4, r: smallR, tint: '#a7d8e6' },
+      { action: 'use',   label: 'EAT', x: W - smallR - gap, y: bottomY - bigR - midR * 2 - smallR * 5 - gap * 5, r: smallR, tint: '#7fd48a' },
+      { action: 'smoke', label: 'SMK', x: W - smallR - gap, y: bottomY - bigR - midR * 2 - smallR * 7 - gap * 6, r: smallR, tint: '#8a9483' },
+
+      // left edge: weapon and squad, away from the movement thumb
+      { action: 'weapon',  label: 'GUN', x: midR + gap, y: bottomY, r: midR, tint: '#e8d7b0' },
+      { action: 'command', label: 'CMD', x: smallR + gap, y: bottomY - midR - smallR - gap, r: smallR, tint: '#f0c05a', toggle: true },
+      { action: 'rally',   label: 'RLY', x: smallR + gap, y: bottomY - midR - smallR * 3 - gap * 2, r: smallR, tint: '#f0c05a' },
+
+      // top-right row: menus, out of the way of both thumbs
+      { action: 'craft',      label: 'CRF', x: W - smallR - gap, y: smallR + gap, r: smallR, tint: '#e8d7b0' },
+      { action: 'chips',      label: 'CHP', x: W - smallR * 3 - gap * 2, y: smallR + gap, r: smallR, tint: '#4de1ff' },
+      { action: 'map',        label: 'MAP', x: W - smallR * 5 - gap * 3, y: smallR + gap, r: smallR, tint: '#8ac47a' },
+      { action: 'pause',      label: '||',  x: W - smallR * 7 - gap * 4, y: smallR + gap, r: smallR, tint: '#8a9483' },
+      { action: 'fullscreen', label: 'FS',  x: W - smallR * 9 - gap * 5, y: smallR + gap, r: smallR, tint: '#8a9483' },
     ];
-    this.stickR = Math.round(STICK_R * s);
-    this.knobR = Math.round(KNOB_R * s);
+    this.stickR = Math.round(STICK_R * s * 0.8);
+    this.knobR = Math.round(KNOB_R * s * 0.8);
   }
 
   onViewportChange() { this._layout(); }
@@ -237,15 +424,43 @@ export class TouchControls {
       for (const b of this.buttons) {
         if (this.hidden.has(b.action)) continue;
         const held = this.down.has(b.action) || b.on;
-        const a = held ? 0.85 : 0.34 + (b.flash || 0) * 0.4;
-        ctx.globalAlpha = a;
-        ctx.fillStyle = held ? b.tint : 'rgba(9,16,13,0.9)';
+        const flash = b.flash || 0;
+        const base = held ? 0.92 : 0.4 + flash * 0.35;
+
+        // A dark well with a lit rim, so the button reads against grass, snow,
+        // water and fire without a solid plate blocking the view underneath.
+        ctx.globalAlpha = held ? 0.92 : 0.5;
+        ctx.fillStyle = 'rgba(6,12,11,0.86)';
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
-        ctx.globalAlpha = Math.min(1, a + 0.3);
-        ctx.strokeStyle = b.tint; ctx.lineWidth = 1;
+
+        // pressed state fills with the button's own colour
+        if (held) {
+          ctx.globalAlpha = 0.5;
+          ctx.fillStyle = b.tint;
+          ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 1, 0, TAU); ctx.fill();
+        }
+
+        // rim: two rings, the outer one softer, which reads as depth
+        ctx.globalAlpha = held ? 1 : 0.75;
+        ctx.strokeStyle = b.tint; ctx.lineWidth = held ? 2 : 1.4;
         ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 0.22;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 1.5, 0, TAU); ctx.stroke();
+
+        // a toggle that is on gets a filled pip on the rim
+        if (b.toggle && b.on) {
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = b.tint;
+          ell2(ctx, b.x, b.y - b.r, 1.6, 1.6);
+        }
+
+        // the icon itself
+        ctx.globalAlpha = held ? 1 : 0.9;
+        const icon = ICONS[b.action];
+        if (icon) icon(ctx, b.x, b.y, b.r * 0.78, held ? '#0d1512' : b.tint);
+        else drawText(ctx, b.label, b.x, b.y - 3, held ? '#0d1512' : b.tint, { align: 'center' });
         ctx.globalAlpha = 1;
-        drawText(ctx, b.label, b.x, b.y - 3, held ? '#0d1512' : b.tint, { align: 'center' });
       }
     }
 

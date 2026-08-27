@@ -336,15 +336,16 @@ export class World {
     this.nodes = this.nodes.filter(n => dist2(n.x, n.y, this.den.x, this.den.y) > (7 * TS) * (7 * TS));
     this.decor = this.decor.filter(d => dist2(d.x, d.y, this.den.x, this.den.y) > (5 * TS) * (5 * TS));
 
-    this.props.push({ x: this.den.x, y: this.den.y, kind: 'den', type: 'den', variant: 0 });
-    this.props.push({ x: this.den.x - 46, y: this.den.y + 10, kind: 'workbench', type: 'station', station: 'workbench', variant: 0 });
-    this.props.push({ x: this.den.x + 46, y: this.den.y + 12, kind: 'forge', type: 'station', station: 'forge', variant: 0 });
-    this.props.push({ x: this.den.x + 20, y: this.den.y - 26, kind: 'logPile', type: 'prop', variant: 0 });
-    this.props.push({ x: this.den.x - 22, y: this.den.y - 28, kind: 'crate', type: 'prop', variant: 0 });
+    // Nothing is built. The clearing is a clearing: bare ground, a ring of
+    // stones somebody left, and room for everything you are going to have to
+    // ask other people to make for you.
+    this.props.push({ x: this.den.x - 8, y: this.den.y + 20, kind: 'stump', type: 'stump', variant: 1 });
+    this.props.push({ x: this.den.x + 30, y: this.den.y + 26, kind: 'stump', type: 'stump', variant: 2 });
+    this.campSite = { x: this.den.x, y: this.den.y };
 
     // NPC camps ringed around the den at varying distances.
     const spots = [];
-    const count = 10;
+    const count = 16;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * TAU + rng() * 0.4;
       for (let tryR = 0; tryR < 40; tryR++) {

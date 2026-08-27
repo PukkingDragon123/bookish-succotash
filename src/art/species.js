@@ -140,6 +140,98 @@ export const NPCS = {
       gear: { apron: '#c4bdb2', goggles: true, gogglesColor: '#c9e8f0' },
     },
   },
+  // --- the second wave of neighbours, who arrive once there is a fire ------
+  tamarack: {
+    name: 'Tamarack', title: 'Trapper', species: 'lynx',
+    personality: 'dry', voice: 0.82,
+    ability: 'snare', abilityName: 'Snare Line',
+    blurb: 'Lynx who has been undoing Les Nest traps for six years without being asked.',
+    cfg: {
+      bodyW: 8.2, bodyH: 5, headR: 4, neck: 2.4, snout: 2, snoutDrop: 0.8,
+      ears: 'tuft', earSize: 2.2, earSpread: 2.6,
+      tail: 'stub', tailLen: 4, tailR: 2,
+      legs: 4, legLen: 5.4, legR: 1.7, legSpread: 4, eyeR: 1.1,
+      colors: { body: '#9a8d76', light: '#b6a98e', belly: '#d6cbb2', muzzle: '#c8bda2', foot: '#6a604e', nose: '#332b24', eye: '#c8a02e', accent: '#4a4136' },
+      spots: 8,
+      gear: { belt: '#5a4a32', pouch: '#6b5638' },
+    },
+  },
+
+  pitch: {
+    name: 'Pitch', title: 'Runner', species: 'weasel',
+    personality: 'wry', voice: 1.3,
+    ability: 'relay', abilityName: 'Ammo Relay',
+    blurb: 'Long-tailed weasel. Carries messages nobody wants to carry, fast.',
+    cfg: {
+      bodyW: 6, bodyH: 3.4, headR: 3, neck: 3.4, snout: 2.2,
+      ears: 'round', earSize: 1.5, earSpread: 2,
+      tail: 'thin', tailLen: 11, tailR: 1.5,
+      legs: 4, legLen: 3, legR: 1.1, legSpread: 3, eyeR: 1,
+      colors: { body: '#c9a86a', light: '#e2c88c', belly: '#f2e6c8', muzzle: '#e8d6ac', foot: '#2a241c', nose: '#1a1410', accent: '#2a241c' },
+      gear: { scarf: '#b8452e', pouch: '#5a4a32' },
+    },
+  },
+
+  slate: {
+    name: 'Slate', title: 'Quarrier', species: 'marmot',
+    personality: 'blunt', voice: 0.72,
+    ability: 'rockfall', abilityName: 'Rockfall',
+    blurb: 'Yellow-bellied marmot who knows where every seam of ore in the basin is.',
+    cfg: {
+      bodyW: 8.6, bodyH: 5.6, headR: 3.6, neck: 1.4, snout: 1.8, chunky: 1,
+      ears: 'round', earSize: 1.3, earSpread: 2.2,
+      tail: 'bushy', tailLen: 6, tailR: 2.2,
+      legs: 4, legLen: 2.8, legR: 1.6, legSpread: 4, eyeR: 1,
+      colors: { body: '#8a6a3e', light: '#a8854e', belly: '#d8b264', muzzle: '#c8a468', foot: '#3a2e20', nose: '#1a1410', accent: '#4a3a26' },
+      gear: { hat: 'helmet', hatColor: '#c8a03a', belt: '#4a3a26' },
+    },
+  },
+
+  cinder: {
+    name: 'Cinder', title: 'Firewatch', species: 'raven',
+    personality: 'grim', voice: 0.9,
+    ability: 'spotfire', abilityName: 'Spot The Fire',
+    blurb: 'Raven who watched the last burn from above and has not stopped watching since.',
+    cfg: {
+      bodyW: 6.4, bodyH: 4.6, headR: 3.2, neck: 2.4, snout: 3, beak: true,
+      ears: 'none', earSize: 0, wings: true,
+      tail: 'fan', tailLen: 7, tailR: 2.4,
+      legs: 2, legLen: 3.4, legR: 1, legSpread: 2.4, eyeR: 1.1, biped: true,
+      colors: { body: '#2a2c34', light: '#3d4150', belly: '#22242b', muzzle: '#1a1c22', foot: '#1a1c22', nose: '#14161b', eye: '#d8d2c0', accent: '#5a6478' },
+      gear: { scarf: '#8a4a2e' },
+    },
+  },
+
+  willow: {
+    name: 'Willow', title: 'Forester', species: 'beaver',
+    personality: 'patient', voice: 0.78,
+    ability: 'replant', abilityName: 'Replant',
+    blurb: 'Beaver who plants three for every one she takes, and counts them.',
+    cfg: {
+      bodyW: 9, bodyH: 5.4, headR: 3.8, neck: 1.6, snout: 2.4, chunky: 1,
+      ears: 'round', earSize: 1.2, earSpread: 2.4,
+      tail: 'flat', tailLen: 8, tailR: 3,
+      legs: 4, legLen: 3, legR: 1.7, legSpread: 4.2, eyeR: 1,
+      colors: { body: '#6b4a30', light: '#87603d', belly: '#8a6b4a', muzzle: '#a8845c', foot: '#2e2418', nose: '#1a1410', accent: '#d8b878' },
+      gear: { apron: '#7a8a5c', pouch: '#4a3a26' },
+    },
+  },
+
+  rill: {
+    name: 'Rill', title: 'Kit', species: 'ferret',
+    personality: 'small', voice: 1.5,
+    ability: 'distract', abilityName: 'Distract',
+    blurb: 'A kit from the den. Too young for any of this and entirely undeterred by that.',
+    cfg: {
+      bodyW: 4.6, bodyH: 2.8, headR: 2.6, neck: 2.4, snout: 1.6,
+      ears: 'round', earSize: 1.6, earSpread: 1.8, mask: true,
+      tail: 'thin', tailLen: 7, tailR: 1.3,
+      legs: 4, legLen: 2.4, legR: 1, legSpread: 2.4, eyeR: 1,
+      colors: { body: '#d8c49a', light: '#efdcb4', belly: '#f6ecd4', muzzle: '#f2e4c4', foot: '#3a3026', nose: '#1a1410', maskColor: '#4a3f33', accent: '#3a3026' },
+      gear: { scarf: '#4a8ac4' },
+    },
+  },
+
   bramble: {
     name: 'Bramble', title: 'Digger', species: 'badger',
     personality: 'blunt', voice: 0.6,
@@ -155,7 +247,13 @@ export const NPCS = {
   },
 };
 
-export const NPC_ORDER = ['brindle', 'juniper', 'cobalt', 'mossback', 'wisp', 'sable', 'thermal', 'ember', 'quill', 'bramble'];
+// Ordered roughly by how early you meet them: Ember builds the fire, and the
+// rest of the basin turns up once there is one to turn up to.
+export const NPC_ORDER = [
+  'ember', 'brindle', 'juniper', 'thermal', 'quill', 'bramble',
+  'cobalt', 'mossback', 'wisp', 'sable',
+  'tamarack', 'pitch', 'slate', 'cinder', 'willow', 'rill',
+];
 
 // Wildlife lives in art/beastiary.js now, on the dedicated animal rig.
 

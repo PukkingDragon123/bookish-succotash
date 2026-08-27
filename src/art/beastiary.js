@@ -56,7 +56,7 @@ export const BEASTS = {
       tail: { style: 'stub', len: 3, thick: 0.9 },
       eye: { r: 1, color: '#120d0a' },
       coat: { base: '#4a3a28', dark: '#2a2016', light: '#5f4a32', hi: '#71583a', belly: '#3a2d1e', muzzle: '#2a2016', foot: '#6b6155', nose: '#120d0a' },
-      extras: { antlers: 'moose', antlerColor: '#a89878', bell: true },
+      extras: { antlers: 'moose', antlerColor: '#6b5334', bell: true },
     },
   },
 
@@ -98,7 +98,7 @@ export const BEASTS = {
       legs: { len: 8, thick: 1.35, spread: 4.6, foot: 'hoof', digitigrade: false },
       tail: { style: 'stub', len: 3, thick: 0.9 },
       coat: { base: '#8a6a45', dark: '#54402a', light: '#a37f52', hi: '#b8925e', belly: '#d8c49a', muzzle: '#3d2f20', foot: '#3a2c1e', nose: '#171310' },
-      extras: { antlers: 'elk', antlerColor: '#b8ad92' },
+      extras: { antlers: 'elk', antlerColor: '#5e4830' },
     },
   },
 
@@ -160,7 +160,7 @@ export const BEASTS = {
       tail: { style: 'bushy', len: 8.5, thick: 1.9 },
       eye: { r: 1.1, color: '#e8bb2c' },
       coat: { base: '#7c7c80', dark: '#4a4a4f', light: '#9a9a9e', hi: '#b4b4b6', belly: '#cfcfc9', muzzle: '#b0b0aa', foot: '#3a3a3c', nose: '#141210', tailTip: '#3a3a3c' },
-      extras: { saddle: true, ruff: true },
+      extras: { whiskers: true, saddle: true, ruff: true },
     },
   },
 
@@ -223,7 +223,7 @@ export const BEASTS = {
       tail: { style: 'plume', len: 8, thick: 2.2 },
       eye: { r: 1.2, color: '#120d0a' },
       coat: { base: '#8a5a34', dark: '#5c3a1e', light: '#a8703f', hi: '#c4894f', belly: '#efe3cb', muzzle: '#e0d2b4', nose: '#241b14' },
-      extras: { cheek: true },
+      extras: { whiskers: true, whiskers: true, cheek: true },
     },
   },
 
@@ -244,7 +244,7 @@ export const BEASTS = {
       tail: { style: 'none', len: 0, thick: 0 },
       eye: { r: 1, color: '#0d0a08' },
       coat: { base: '#8a7a5e', dark: '#4a4034', light: '#a8977a', hi: '#c9b894', belly: '#d8ccae', muzzle: '#c9b894', nose: '#0d0a08' },
-      extras: { spines: true },
+      extras: { whiskers: true, spines: true },
     },
   },
 
@@ -451,7 +451,7 @@ export const BEASTS = {
       tail: { style: 'thin', len: 8.5, thick: 1.6 },
       eye: { r: 1.1, color: '#171310' },
       coat: { base: '#d8bd90', dark: '#8f7a56', light: '#e8d0a6', hi: '#f2e0bc', belly: '#f6eeda', muzzle: '#f0e2c4', foot: '#2e2620', nose: '#c07a86', tailTip: '#2e2620' },
-      extras: { mask: true, maskColor: '#4a3f33' },
+      extras: { whiskers: true, mask: true, maskColor: '#4a3f33' },
     },
   },
 
@@ -472,7 +472,7 @@ export const BEASTS = {
       tail: { style: 'thin', len: 6, thick: 1.4 },
       eye: { r: 1.35, color: '#171310' },
       coat: { base: '#e6cfa5', dark: '#a08a63', light: '#f0e0bd', hi: '#f8eeda', belly: '#faf4e6', muzzle: '#f4e8ce', foot: '#463a2c', nose: '#c07a86', tailTip: '#463a2c' },
-      extras: { mask: true, maskColor: '#5c4f40' },
+      extras: { whiskers: true, mask: true, maskColor: '#5c4f40' },
     },
   },
 };

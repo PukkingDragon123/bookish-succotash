@@ -108,6 +108,32 @@ alone, with what you stole. Everything after that is about not doing that again.
 exactly how long you have before the next wave arrives, and what is in it.
 Spend that time gathering; spend the assault staying alive.
 
+### You arrive with nothing, and nothing is built
+
+There is no base. The clearing the transport came down next to is a clearing:
+bare ground, two stumps and room for things that do not exist yet. No den, no
+workbench, no forge, no fire. The crafting screen opens and tells you so.
+
+Everything is behind somebody else's hands. Walk up to a neighbour, ask, and
+then go and find what they want:
+
+| structure | who builds it | wants | what it opens |
+|---|---|---|---|
+| **Fire Pit** | Ember | 6 wood, 4 stone | somewhere warm — standing at it heals you |
+| **Workbench** | Brindle | 12 wood, 6 stone | gunpowder and rounds |
+| **The Den** | Juniper | 16 wood, 10 fibre | somewhere to wake up when you fall |
+| **Forge** | Thermal | 14 stone, 6 iron, 4 wood | weapons and charcoal |
+| **Drying Rack** | Doc Quill | 8 wood, 6 fibre | better salve |
+| **Palisade** | Bramble | 20 wood, 10 stone | cover around the camp |
+
+They do not hand you a menu. They walk over to the plot, and you watch them
+build it — sawdust, hammer blows, four to seven seconds of somebody doing you a
+favour — and then the thing is standing there.
+
+Each one needs the one before it, so the camp goes up in an order, and the order
+is a story: fire first, because you are shaking; then a bench, because Brindle
+will not watch you try to make powder on a rock.
+
 ### Gathering and the ten-log rule
 
 Chop trees, mine boulders and ore, pick berries, scrape sulfur and saltpeter out
@@ -142,12 +168,33 @@ Three completed requests and they will pick up a gun and follow you.
 | **Ember** | ferret kit, brave | smoke screens |
 | **Doc Quill** | porcupine medic, fussy | quill volley + a second chance |
 | **Bramble** | badger digger, blunt | burrow slam |
+| **Tamarack** | lynx trapper, dry | snare lines that only catch people |
+| **Pitch** | weasel runner, wry | ammo caches wherever you end up |
+| **Slate** | marmot quarrier, blunt | rockfall, and knows every seam of ore |
+| **Cinder** | raven firewatch, grim | sees the smoke before you do |
+| **Willow** | beaver forester, patient | replants, and counts them |
+| **Rill** | ferret kit, small | too young for this and entirely undeterred |
+
+They talk about what is actually happening. A wave starting, the basin
+catching fire, a building going up, you walking around on a quarter of your
+health — each one has a line for it in their own voice, and sixteen different
+reactions to the same event is what makes the basin feel inhabited rather than
+staffed.
 
 ### The animals
 
-Twenty-two species live in the basin, each drawn on its own rig — three-segment
-legs, ear and horn and antler builders, tails with their own profile — rather
-than a recoloured template. **Bison, moose, bear, elk, pronghorn, bighorn,
+Twenty-two species live in the basin, and every one is built from a skeleton
+rather than a stack of ellipses: a spine with the right slope from croup to
+withers for the species, a scapula and a femur hung off it, limbs with real
+joint counts, and a skull that is a cranium plus a muzzle with a stop between
+them.
+
+Posture does the rest. A bear puts its whole foot down, a wolf walks on its
+toes, an elk walks on one nail — plantigrade, digitigrade and unguligrade give
+you three completely different silhouettes out of the same leg length, and
+getting that right is most of what "looks like the animal" means at this size.
+Prey carry their eyes on the side of the skull and predators at the front,
+which does more for recognition than colour ever does. **Bison, moose, bear, elk, pronghorn, bighorn,
 wolf, coyote, fox, hare, squirrel, hedgehog, marmot, pika, beaver, otter,
 raven, magpie, eagle, crane** and two kinds of ferret.
 
@@ -161,6 +208,18 @@ They do not all react the same way when the trucks arrive:
 | **defensive** | hedgehog, beaver, otter | dig in where they are |
 | **pack** | wolf, coyote | flank, and only commit with numbers |
 | **aggro** | bear, eagle | go straight at it |
+
+### Faces
+
+Every character carries an expression on top of whatever its body is doing, so
+an animal can be sprinting and frightened at the same time. Eyes, lids, brows,
+mouth and ear set all move: a wolf that has decided to fight has its brows in
+and its lip off its teeth, a hare that has seen you shows the whites of its
+eyes, a companion at full trust pants happily behind you, and Doc Quill
+concentrates while she is building your drying rack.
+
+None of it is stored anywhere. Expression is read off the situation — health,
+AI state, what the animation is doing — so it is always telling the truth.
 
 ### Trust, tools and orders
 
@@ -265,8 +324,19 @@ A few things worth knowing if you go reading:
   plan by hand into the same `World` object the basin uses — same collision,
   same chunk renderer, same draw list.
 - **The basin is not built until you need it.** The game boots into the
-  facility; the 340×280 basin (about 13,000 resource nodes and 660 animals) is
-  generated in ~200ms when the campaign hands over.
+  facility; the 460×380 basin (about 27,000 resource nodes and 1,200 animals) is
+  generated in ~380ms when the campaign hands over.
+- **The camera sits a long way back.** The internal resolution targets 420
+  game pixels of height rather than 260, so you see roughly two and a half
+  times as much basin at once and the ferret is small in the middle of it. The
+  sprites went up to match: the wildlife rig draws at 1.9× and the critter rig
+  at 1.5×, so the extra screen space is spent on detail rather than emptiness.
+- **Touch controls are measured in screen pixels, not game pixels.** A thumb is
+  about 44 CSS pixels wide whatever the game is rendering at, so the buttons
+  invert the display scale and come out the same physical size on a phone, an
+  iPad and a desktop browser. Each one is an icon rather than a three-letter
+  label, because you cannot read three letters under your own thumb in a
+  firefight.
 
 ## Tests
 
@@ -277,9 +347,10 @@ npm start &                  # serve on :8080
 export URL=http://localhost:8080/index.html
 export ART_URL=http://localhost:8080/tools/artcheck.html
 
-npm test                     # end-to-end checks: gathering, crafting, the
+npm test                     # end-to-end checks: the empty camp and asking
+                             # somebody to build it, gathering, crafting, the
                              # handover, recruiting, chip theft, rescues, waves,
-                             # the burn, all three bosses, and a 50-enemy
+                             # the burn, all three bosses, and a 40-enemy
                              # frame-rate floor
 npm run story                # plays the whole campaign: walks the tutorial,
                              # runs the course, mashes out of the tank, fights

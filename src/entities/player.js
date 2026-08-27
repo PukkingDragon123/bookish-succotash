@@ -720,8 +720,24 @@ export class Player {
   }
 
   // --- drawing -------------------------------------------------------------
+  /**
+   * The face. Derived, so it is always telling the truth about the state the
+   * ferret is actually in rather than whatever was last set on it.
+   */
+  get expression() {
+    if (this.dead) return 'dead';
+    if (this.hurtT > 0.05) return 'hurt';
+    if (this.hp < this.maxHp * 0.3) return 'hurt';
+    if (this.overclock) return 'angry';
+    if (this.meleeT > 0 || this.parryT > 0) return 'angry';
+    if (this.combo >= 3) return 'happy';
+    if (this.gatherT > 0) return 'focused';
+    if (this.dashT > 0) return 'focused';
+    return 'calm';
+  }
+
   frames(anim, view) {
-    return critterFrames('player', PLAYER_CFG, anim, view, anim === 'idle' ? 8 : 8);
+    return critterFrames('player', PLAYER_CFG, anim, view, 8, this.expression);
   }
 
   draw(r, game) {
