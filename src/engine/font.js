@@ -193,18 +193,23 @@ function _blit(ctx, s, px, py, color, scale, tracking, opts) {
 
 /** Greedy word wrap. Returns an array of lines. */
 export function wrapText(str, maxWidth, scale = 1, tracking = 1) {
-  const words = String(str).split(/\s+/);
   const lines = [];
-  let line = '';
-  for (const word of words) {
-    const test = line ? line + ' ' + word : word;
-    if (measure(test, scale, tracking) > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = test;
+  // An explicit newline in the source is a line break the writer asked for,
+  // and losing it runs two sentences together in the middle of a bubble.
+  for (const para of String(str).split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (!words.length) { lines.push(''); continue; }
+    let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (measure(test, scale, tracking) > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
     }
+    if (line) lines.push(line);
   }
-  if (line) lines.push(line);
   return lines;
 }

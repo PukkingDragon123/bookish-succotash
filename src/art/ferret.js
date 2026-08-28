@@ -20,6 +20,18 @@
 import { P } from './palette.js';
 import { TAU, clamp, lerp } from '../engine/math.js';
 
+/** Cheap scatter for blink timing. Does not need to be good. */
+/** Lighten a hex by a fraction. */
+function shadeHex(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, Math.round(((n >> 16) & 255) + (255 - ((n >> 16) & 255)) * amt));
+  const g = Math.min(255, Math.round(((n >> 8) & 255) + (255 - ((n >> 8) & 255)) * amt));
+  const b = Math.min(255, Math.round((n & 255) + (255 - (n & 255)) * amt));
+  return `rgb(${r},${g},${b})`;
+}
+
+function rndish(v) { const x = Math.sin(v * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
 // ---------------------------------------------------------------------------
 //  shape
 // ---------------------------------------------------------------------------
@@ -32,9 +44,9 @@ const MAX_BEND = 0.42;      // radians of bend allowed at each joint
 // is a tube: barely thicker at the shoulder than at the hip, and never as tall
 // as it is long. Small numbers here are the whole point.
 const PROFILE = [
-  1.0, 1.4, 1.7, 1.9, 2.0,  // neck and shoulder
+  1.5, 1.8, 1.9, 2.0, 2.0,  // neck and shoulder
   2.0, 1.9, 1.9, 1.9, 1.9,  // the long middle
-  1.8, 1.5, 1.2, 0.9, 0.6,  // hip into tail
+  1.7, 1.3, 1.0, 0.8, 0.5,  // hip into tail
 ];
 const SHOULDER = 4;         // spine index the front legs hang off
 const HIP = 9;              // ...and the back legs
@@ -47,6 +59,8 @@ const COL = {
   dark: '#a8926a',
   guard: '#8a7452',
   mask: '#3a3026',
+  earInner: '#b98d84',
+  face: '#f0e4cc',
   foot: '#2a241c',
   tailTip: '#2a241c',
   nose: '#1a1410',
@@ -73,6 +87,28 @@ export class FerretRig {
     this.travel = 0;
     this.facing = 1;
     this.lastX = 0; this.lastY = 0;
+    // the bite: a lunge and a snap, driven from the same place as everything
+    // else so the body comes with the head instead of the head sliding off it
+    this.biteT = 0;
+    this.biteDur = 0.26;
+    this.biteAng = 0;
+    this.blinkT = 0;
+    this.earFlick = 0;
+  }
+
+  /**
+   * Dash in and bite. The head goes first and hard, the jaw opens on the way
+   * in and closes at full extension, and the body follows because it has no
+   * choice — which is the whole reason the rig exists.
+   */
+  bite(ang) {
+    this.biteT = this.biteDur;
+    this.biteAng = ang;
+  }
+
+  /** 0 while idle, 0..1 through the lunge, for anything that wants to react. */
+  get biteProgress() {
+    return this.biteT > 0 ? 1 - this.biteT / this.biteDur : 0;
   }
 
   /** Snap the whole body to a point. Used on spawn and after a teleport. */
@@ -124,9 +160,26 @@ export class FerretRig {
     while (d2 < -Math.PI) d2 += TAU;
     lookAng += d2 * Math.min(1, dt * 13);
     this.lookAng = lookAng;
-    const lead = 2.2;
-    head.x = x + Math.cos(lookAng) * lead;
-    head.y = y - 2.6 + Math.sin(lookAng) * lead * 0.55;
+    // A bite throws the nose a long way forward for a fifth of a second, and
+    // points it at what she is biting rather than where she is walking.
+    this.biteT = Math.max(0, this.biteT - dt);
+    let lead = 2.2, headAng = lookAng;
+    if (this.biteT > 0) {
+      const f = this.biteProgress;
+      // out fast, back slow: the snap is on the way in
+      const reach = f < 0.45 ? f / 0.45 : 1 - (f - 0.45) / 0.55 * 0.75;
+      lead = 2.2 + reach * 7.5;
+      headAng = this.biteAng;
+      this.lookAng = this.biteAng;
+    }
+    head.x = x + Math.cos(headAng) * lead;
+    head.y = y - 2.6 + Math.sin(headAng) * lead * 0.55;
+
+    // blinks and ear flicks, so a standing ferret is never completely still
+    this.blinkT -= dt;
+    if (this.blinkT < -0.1) this.blinkT = rndish(this.travel + x) * 3 + 2.2;
+    this.earFlick = Math.max(0, this.earFlick - dt);
+    if (this.earFlick <= 0 && speed < 20 && Math.random() < dt * 0.4) this.earFlick = 0.3;
 
     for (let i = 1; i < SEGS; i++) {
       const a = this.spine[i - 1], b = this.spine[i];
@@ -255,9 +308,23 @@ export class FerretRig {
       ctx.fillStyle = tint || (far ? COL.guard : COL.dark);
       this._seg(ctx, hipX, hipY, kneeX, kneeY, 1);
       this._seg(ctx, kneeX, kneeY, fx, fy, 0.8);
-      // black feet: the thing the species is named after
+
+      // Black feet: the thing the species is actually named after. A paw pad
+      // with toes on it, and a lighter top edge when the foot is off the
+      // ground, so a step reads as a step and not a shadow twitching.
+      const px3 = Math.round(fx), py3 = Math.round(fy);
       ctx.fillStyle = tint || COL.foot;
-      ctx.fillRect(Math.round(fx) - 1, Math.round(fy) - 1, 3, 2);
+      ctx.fillRect(px3 - 1, py3 - 1, 3, 2);
+      if (!tint) {
+        // two toes on the leading edge, and a lit top when the foot is up
+        const tang = Math.atan2(fy - kneeY, fx - kneeX);
+        const tnx = -Math.sin(tang), tny = Math.cos(tang);
+        ctx.fillStyle = shadeHex(COL.foot, 0.3);
+        for (const k of [-0.7, 0.7]) {
+          ctx.fillRect(Math.round(fx + Math.cos(tang) * 1.2 + tnx * k), Math.round(fy + Math.sin(tang) * 1.2 + tny * k), 1, 1);
+        }
+        if (lifted > 0.5) { ctx.fillStyle = COL.dark; ctx.fillRect(px3 - 1, py3 - 2, 2, 1); }
+      }
     }
 
     // --- body ---------------------------------------------------------------
@@ -288,52 +355,130 @@ export class FerretRig {
     const ang = Math.atan2(h.y - n1.y, h.x - n1.x);
     const ca = Math.cos(ang), sa = Math.sin(ang);
     const px2 = -sa, py2 = ca;                 // unit normal
+    const bite = this.biteProgress;
+    // the jaw is wide open on the way in and shut at full extension
+    const jaw = this.biteT > 0 ? (bite < 0.5 ? bite / 0.5 : Math.max(0, 1 - (bite - 0.5) / 0.22)) : 0;
     const hx = h.x + ca * 0.6, hy = h.y + sa * 0.6 + this.headBob * 0.2;
-    const hr = 2.4 * S;
+    const hr = 2.7 * S;
 
-    // ears first, so the skull overlaps their bases
+    // --- ears, behind the skull so it overlaps their bases ------------------
+    // Small, round, set wide and low on the back of the head. They flick, they
+    // pin back when she is running flat out, and they are half of why a face
+    // this size reads as a face at all.
     if (!tint) {
+      const pin = clamp(this.bound * 0.9 + (this.biteT > 0 ? 1 : 0), 0, 1);
+      const flick = this.earFlick > 0 ? Math.sin(this.earFlick * 40) * 0.5 : 0;
       for (const side of [-1, 1]) {
-        const ex = hx - ca * hr * 0.55 + px2 * side * hr * 0.8;
-        const ey = hy - sa * hr * 0.55 + py2 * side * hr * 0.8 - hr * 0.5;
+        // pinned ears slide back along the skull instead of standing up
+        const back = 0.35 + pin * 0.55;
+        const out = (0.95 - pin * 0.3) * (1 + (side > 0 ? flick : -flick) * 0.2);
+        const ex = hx - ca * hr * back + px2 * side * hr * out;
+        const ey = hy - sa * hr * back + py2 * side * hr * out - hr * (0.34 - pin * 0.24);
         ctx.fillStyle = COL.outline;
-        this._blob(ctx, ex, ey, 1.5 * S);
+        this._blob(ctx, ex, ey, 1.8 * S);
+        ctx.fillStyle = COL.face;
+        this._blob(ctx, ex, ey, 1.2 * S);
         ctx.fillStyle = COL.base;
-        this._blob(ctx, ex, ey, 0.9 * S);
+        this._blob(ctx, ex - ca * 0.4, ey - sa * 0.4, 0.7 * S);
+        // the pink inside, one pixel, only when the ear is up
+        if (pin < 0.5) {
+          ctx.fillStyle = COL.earInner;
+          ctx.fillRect(Math.round(ex + ca * 0.6), Math.round(ey + sa * 0.6), 1, 1);
+        }
       }
     }
 
+    // --- skull ---------------------------------------------------------------
+    // The head is the pale part. A black-footed ferret's face is cream from
+    // the crown to the chin with one dark band across the eyes, and painting
+    // the skull in body colour throws that away and leaves a brown lump.
     ctx.fillStyle = tint || COL.outline;
     this._blob(ctx, hx, hy, hr + 1);
-    ctx.fillStyle = tint || COL.base;
+    ctx.fillStyle = tint || COL.face;
     this._blob(ctx, hx, hy, hr);
 
     if (!tint) {
-      // Muzzle, mask, eyes. At five pixels across, every extra mark is mud:
-      // one pale nose, one dark band, one dark eye and one that is not hers.
-      const mx = hx + ca * hr * 0.9, my = hy + sa * hr * 0.9;
-      ctx.fillStyle = COL.belly;
-      this._blob(ctx, mx, my, hr * 0.5);
-      ctx.fillStyle = COL.nose;
-      ctx.fillRect(Math.round(mx + ca * hr * 0.55), Math.round(my + sa * hr * 0.55), 1, 1);
+      // the crown is a shade darker, so the skull still has a top and a side
+      ctx.fillStyle = COL.base;
+      this._blob(ctx, hx - ca * hr * 0.62, hy - sa * hr * 0.62, hr * 0.42);
 
-      ctx.fillStyle = COL.mask;
-      for (let t = -1.1; t <= 1.1; t += 0.55) {
-        ctx.fillRect(Math.round(hx + px2 * t * hr * 0.9), Math.round(hy + py2 * t * hr * 0.9), 1, 1);
+      // --- muzzle -----------------------------------------------------------
+      // A ferret's face is mostly nose: a pale wedge running forward off the
+      // skull, a dark button on the end of it, and a mouth line underneath.
+      const mL = hr * 0.88;
+      const mx = hx + ca * mL, my = hy + sa * mL;
+      // No keyline on the muzzle: it sits inside the skull silhouette, and an
+      // outline there just draws a dark ring across the middle of the face.
+      ctx.fillStyle = COL.face;
+      this._blob(ctx, mx, my, hr * 0.5);
+      ctx.fillStyle = shadeHex(COL.face, 0.35);
+      this._blob(ctx, mx - ca * 0.4, my - sa * 0.4 - 0.5, hr * 0.28);
+
+      const nx2 = mx + ca * hr * 0.52, ny2 = my + sa * hr * 0.52;
+      ctx.fillStyle = COL.nose;
+      ctx.fillRect(Math.round(nx2), Math.round(ny2), 2, 1);
+      ctx.fillStyle = shadeHex(COL.nose, 0.35);
+      ctx.fillRect(Math.round(nx2), Math.round(ny2), 1, 1);
+
+      // --- jaw --------------------------------------------------------------
+      if (jaw > 0.05) {
+        // open mouth: a dark wedge under the nose with two teeth in it
+        const gape = jaw * hr * 1.15;
+        const jx = mx - ca * hr * 0.15, jy = my - sa * hr * 0.15;
+        ctx.fillStyle = '#3a1414';
+        for (let d = 0; d <= gape; d += 0.6) {
+          const wdt = Math.max(1, Math.round((1 - d / (gape + 0.6)) * hr * 0.9));
+          for (let k = -wdt; k <= wdt; k++) {
+            ctx.fillRect(Math.round(jx + ca * d + px2 * k * 0.7), Math.round(jy + sa * d + py2 * k * 0.7), 1, 1);
+          }
+        }
+        ctx.fillStyle = '#f4efe2';
+        for (const side of [-1, 1]) {
+          ctx.fillRect(Math.round(jx + ca * 0.6 + px2 * side * hr * 0.5), Math.round(jy + sa * 0.6 + py2 * side * hr * 0.5), 1, 1);
+          ctx.fillRect(Math.round(jx + ca * gape * 0.7 + px2 * side * hr * 0.3), Math.round(jy + sa * gape * 0.7 + py2 * side * hr * 0.3), 1, 1);
+        }
+      } else {
+        // closed: one short line, which is all a mouth needs at this size
+        ctx.fillStyle = shadeHex(COL.nose, 0.18);
+        ctx.fillRect(Math.round(mx + px2 * 0.5), Math.round(my + py2 * 0.5 + 1), 1, 1);
+        ctx.fillRect(Math.round(mx - px2 * 0.5), Math.round(my - py2 * 0.5 + 1), 1, 1);
       }
 
-      const e1x = hx + ca * hr * 0.15 + px2 * hr * 0.6;
-      const e1y = hy + sa * hr * 0.15 + py2 * hr * 0.6;
-      const e2x = hx + ca * hr * 0.15 - px2 * hr * 0.6;
-      const e2y = hy + sa * hr * 0.15 - py2 * hr * 0.6;
-      ctx.fillStyle = COL.eye;
-      ctx.fillRect(Math.round(e1x), Math.round(e1y), 1, 1);
-      // the lab's eye: it has no lid, so it is the one thing on her that never
-      // changes expression
-      ctx.fillStyle = P.cyber;
-      ctx.fillRect(Math.round(e2x), Math.round(e2y), 1, 1);
+      // --- the mask ----------------------------------------------------------
+      // The band across the eyes is the single most recognisable thing about a
+      // black-footed ferret, so it is drawn as a band and not a smudge.
+      ctx.fillStyle = COL.mask;
+      for (let t = -1.3; t <= 1.3; t += 0.22) {
+        const bx2 = hx + px2 * t * hr * 0.9 + ca * hr * 0.12;
+        const by2 = hy + py2 * t * hr * 0.9 + sa * hr * 0.12;
+        // two pixels deep, following the face's own axis
+        ctx.fillRect(Math.round(bx2), Math.round(by2), 1, 1);
+        ctx.fillRect(Math.round(bx2 + ca * 0.9), Math.round(by2 + sa * 0.9), 1, 1);
+      }
+
+      // --- eyes ---------------------------------------------------------------
+      const blinking = this.blinkT > 0 && this.blinkT < 0.09;
+      const eF = hr * 0.22, eS = hr * 0.66;
+      const e1x = hx + ca * eF + px2 * eS, e1y = hy + sa * eF + py2 * eS;
+      const e2x = hx + ca * eF - px2 * eS, e2y = hy + sa * eF - py2 * eS;
+
+      // hers: a dark bead with a catchlight, and it blinks
+      if (blinking) {
+        ctx.fillStyle = COL.mask;
+        ctx.fillRect(Math.round(e1x) - 1, Math.round(e1y), 2, 1);
+      } else {
+        // Flat black, no catchlight. A pale highlight here reads as a second
+        // glowing optic, and the whole point is that she only has one.
+        ctx.fillStyle = COL.eye;
+        ctx.fillRect(Math.round(e1x) - 1, Math.round(e1y) - 1, 2, 2);
+      }
+
+      // theirs: a hard little optic with a housing. It has no lid, so it does
+      // not blink with the other one, and that is the point of it.
+      ctx.fillStyle = P.nestSteelDk;
+      ctx.fillRect(Math.round(e2x) - 1, Math.round(e2y) - 1, 3, 2);
       ctx.fillStyle = P.cyberHot;
-      ctx.fillRect(Math.round(e2x), Math.round(e2y), 1, 1);
+      ctx.fillRect(Math.round(e2x), Math.round(e2y) - 1, 1, 1);
 
       // stitches over the shoulder, where they opened her up
       const st = pts[SHOULDER + 1];
@@ -385,10 +530,26 @@ export class FerretRig {
 
   // -- primitives ------------------------------------------------------------
 
-  /** A small filled square, centred, used for heads and ear buds. */
+  /**
+   * A filled disc, centred, rasterised row by row.
+   *
+   * The obvious thing here is a square, and a square is what a head made of
+   * stacked squares looks like: a brick. Scanning rows costs a handful of
+   * fillRects and gives an actual round skull at five pixels across, which is
+   * the difference between a face and a smudge.
+   */
   _blob(ctx, x, y, r) {
-    const d = Math.max(1, Math.round(r * 2));
-    ctx.fillRect(Math.round(x) - (d >> 1), Math.round(y) - (d >> 1), d, d);
+    const cx = Math.round(x), cy = Math.round(y);
+    if (r <= 0.7) { ctx.fillRect(cx, cy, 1, 1); return; }
+    if (r <= 1.2) { ctx.fillRect(cx - 1, cy - 1, 2, 2); return; }
+    const R = r;
+    const top = Math.round(-R), bot = Math.round(R);
+    for (let j = top; j <= bot; j++) {
+      const dy = (Math.abs(j) + 0.5) - 0.5;
+      const half = Math.sqrt(Math.max(0, R * R - dy * dy));
+      const w = Math.max(1, Math.round(half * 2));
+      ctx.fillRect(cx - (w >> 1), cy + j, w, 1);
+    }
   }
 
   /** A tapering limb segment. */

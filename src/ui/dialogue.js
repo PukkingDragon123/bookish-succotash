@@ -10,6 +10,102 @@ import { audio } from '../engine/audio.js';
 
 const MAX_W = 168;
 
+/**
+ * One speech bubble, drawn in screen space over a world position.
+ *
+ * Everything that talks in this game uses this: neighbours in the basin, Dax
+ * through the glass, Vane from the chair. A bar of text pinned to the bottom
+ * of the screen tells you somebody is speaking; a bubble with a tail tells you
+ * *who*, which matters a great deal in a room with three of them in it.
+ */
+export function speechBubble(r, game, o) {
+  const ctx = r.ctx;
+  const cam = r.camera;
+  const lines = o.lines;
+  const alpha = o.alpha == null ? 1 : o.alpha;
+  const accent = o.color || P.uiBorder;
+  const small = !!o.small;
+
+  let w = 0;
+  for (const l of lines) w = Math.max(w, measure(l, 1));
+  w = Math.min(o.maxW || MAX_W, w);
+  const padX = 5, padY = 4;
+  const bw = w + padX * 2;
+
+  // The box grows with the text rather than opening at its final height and
+  // waiting to be filled. Width is fixed to the longest line so it only ever
+  // grows downward — a bubble that also changes width mid-sentence twitches.
+  const budget = o.chars == null ? Infinity : o.chars;
+  let shown = 0, counted = 0;
+  for (const l of lines) {
+    if (counted >= budget) break;
+    shown++;
+    counted += l.length + 1;
+  }
+  shown = Math.max(1, shown);
+  const bh = shown * LINE_H + padY * 2 + (o.accept ? LINE_H : 0);
+
+  const anchorX = o.x - cam.ox;
+  const anchorY = o.y - cam.oy;
+  let bx = Math.round(anchorX - bw / 2);
+  let by = Math.round(anchorY - bh - 6);
+  // If the speaker is near the top of the screen the bubble flips under them,
+  // so it never gets shoved off and pointed at nothing.
+  const below = by < 20;
+  if (below) by = Math.round(anchorY + 8);
+  bx = clamp(bx, 4, VIEW_W - bw - 4);
+  by = clamp(by, 16, VIEW_H - bh - 26);
+
+  ctx.globalAlpha = alpha;
+  const fill = small ? 'rgba(9,16,13,0.80)' : 'rgba(9,16,13,0.94)';
+  r.uiRect(bx, by, bw, bh, fill);
+  r.uiStroke(bx, by, bw, bh, small ? '#2c4230' : accent);
+  // a lit top edge, so the bubble has a light source like everything else
+  r.uiRect(bx + 1, by, bw - 2, 1, small ? '#2c4230' : accent);
+
+  // the tail, pointing at whoever is talking
+  const tx = clamp(Math.round(anchorX), bx + 5, bx + bw - 6);
+  if (below) {
+    r.uiRect(tx - 2, by - 2, 4, 2, fill);
+    r.uiRect(tx - 1, by - 4, 2, 2, fill);
+    r.uiRect(tx - 2, by - 3, 1, 1, accent);
+    r.uiRect(tx + 1, by - 3, 1, 1, accent);
+  } else {
+    r.uiRect(tx - 2, by + bh, 4, 2, fill);
+    r.uiRect(tx - 1, by + bh + 2, 2, 2, fill);
+    r.uiRect(tx - 2, by + bh + 1, 1, 1, accent);
+    r.uiRect(tx + 1, by + bh + 1, 1, 1, accent);
+  }
+
+  // the name tag sits on the bubble's shoulder
+  if (o.name) {
+    const nameW = measure(o.name, 1);
+    const nx = clamp(bx + 3, 2, VIEW_W - nameW - 8);
+    r.uiRect(nx, by - 8, nameW + 6, 9, accent);
+    drawText(ctx, o.name, nx + 3, by - 7, P.uiDark, { scale: 1 });
+  }
+
+  let used = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const remain = budget - used;
+    if (remain <= 0) break;
+    drawText(ctx, lines[i].slice(0, Math.max(0, remain)), bx + padX, by + padY + i * LINE_H,
+      small ? P.uiDim : (o.textColor || P.ui), { scale: 1 });
+    used += lines[i].length + 1;
+  }
+
+  if (o.accept && budget >= lines.join(' ').length - 1) {
+    const blink = Math.floor(game.time * 3) % 2 === 0;
+    drawText(ctx, blink ? '[E] ACCEPT' : ' [E] ACCEPT', bx + padX, by + padY + lines.length * LINE_H, P.favor);
+  }
+  if (o.more) {
+    const blink = Math.floor(game.time * 3) % 2 === 0;
+    drawText(ctx, 'E', bx + bw - 5, by + bh - 9, blink ? accent : P.uiDim, { align: 'right' });
+  }
+  ctx.globalAlpha = 1;
+  return { bx, by, bw, bh };
+}
+
 export class Dialogue {
   constructor() {
     this.active = null;      // { npc, text, life, maxLife, chars, lines, accept }
@@ -71,50 +167,11 @@ export class Dialogue {
   }
 
   _bubble(r, game, npc, lines, charBudget, alpha, showAccept, small) {
-    const ctx = r.ctx;
-    const cam = r.camera;
-    const scale = small ? 1 : 1;
-    let w = 0;
-    for (const l of lines) w = Math.max(w, measure(l, scale));
-    w = Math.min(MAX_W, w);
-    const padX = 5, padY = 4;
-    const bw = w + padX * 2;
-    const bh = lines.length * LINE_H + padY * 2 + (showAccept ? LINE_H : 0);
-
-    const anchorX = npc.x - cam.ox;
-    const anchorY = npc.y - (npc.h || 20) - 10 - cam.oy;
-    let bx = Math.round(anchorX - bw / 2);
-    let by = Math.round(anchorY - bh);
-    bx = clamp(bx, 4, VIEW_W - bw - 4);
-    by = clamp(by, 22, VIEW_H - bh - 40);
-
-    ctx.globalAlpha = alpha;
-    r.uiRect(bx, by, bw, bh, small ? 'rgba(9,16,13,0.78)' : 'rgba(9,16,13,0.93)');
-    r.uiStroke(bx, by, bw, bh, small ? '#2c4230' : P.uiBorder);
-    // tail
-    const tx = clamp(Math.round(anchorX), bx + 5, bx + bw - 6);
-    r.uiRect(tx - 2, by + bh, 4, 2, small ? 'rgba(9,16,13,0.78)' : 'rgba(9,16,13,0.93)');
-    r.uiRect(tx - 1, by + bh + 2, 2, 2, small ? 'rgba(9,16,13,0.78)' : 'rgba(9,16,13,0.93)');
-
-    if (!small) {
-      const nameW = measure(npc.name, 1);
-      r.uiRect(bx + 3, by - 8, nameW + 6, 9, P.uiBorder);
-      drawText(ctx, npc.name, bx + 6, by - 7, P.uiDark, { scale: 1 });
-    }
-
-    let used = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const remain = charBudget - used;
-      if (remain <= 0) break;
-      const line = lines[i].slice(0, Math.max(0, remain));
-      used += lines[i].length + 1;
-      drawText(ctx, line, bx + padX, by + padY + i * LINE_H, small ? P.uiDim : P.ui, { scale });
-    }
-
-    if (showAccept && charBudget >= lines.join(' ').length - 1) {
-      const blink = Math.floor(game.time * 3) % 2 === 0;
-      drawText(ctx, blink ? '[E] ACCEPT' : ' [E] ACCEPT', bx + padX, by + padY + lines.length * LINE_H, P.favor, { scale: 1 });
-    }
-    ctx.globalAlpha = 1;
+    speechBubble(r, game, {
+      x: npc.x, y: npc.y - (npc.h || 20) - 4,
+      lines, chars: charBudget, alpha, accept: showAccept, small,
+      name: small ? null : npc.name,
+    });
   }
+
 }

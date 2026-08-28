@@ -51,6 +51,14 @@ export class FirstStand {
   play(beats, opts = {}) {
     const cs = new Cutscene(beats, Object.assign({ letterbox: 1 }, opts, {
       onDone: () => { if (this.cut === cs) this.cut = null; },
+      // The escort speak from wherever they happen to be standing.
+      speakerAt: (who, game) => {
+        const k = String(who).toUpperCase();
+        if (k === 'ENFORCER') return this.squad.find(e => !e.dead) || null;
+        if (k === 'SUBJECT 41') return game.player;
+        if (k === 'IMPLANT') return game.player;
+        return null;
+      },
     }));
     this.cut = cs;
     return cs;

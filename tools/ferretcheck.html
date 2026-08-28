@@ -1,0 +1,96 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>ferret rig</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#20281f;color:#8ac47a;font:12px monospace}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+// A flat background and a lot of magnification. Iterating on a five-pixel face
+// inside the running game is guesswork; here every pixel is 14 across.
+import { FerretRig } from '../src/art/ferret.js';
+import { drawText } from '../src/engine/font.js';
+
+const Z = 14;                 // magnification
+const CELL_W = 40, CELL_H = 30;
+const COLS = 4, ROWS = 4;
+const c = document.getElementById('c');
+c.width = CELL_W * COLS * Z;
+c.height = CELL_H * ROWS * Z;
+const ctx = c.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// a stand-in renderer: the rig only needs ctx and a camera with ox/oy
+const buf = document.createElement('canvas');
+buf.width = CELL_W; buf.height = CELL_H;
+const bctx = buf.getContext('2d');
+bctx.imageSmoothingEnabled = false;
+
+const fake = { ctx: bctx, camera: { ox: 0, oy: 0 } };
+
+/** Run a rig forward for a while so the spine settles into the pose. */
+function pose(o) {
+  const rig = new FerretRig();
+  const cx = CELL_W / 2, cy = CELL_H * 0.7;
+  rig.reset(cx, cy);
+  const dt = 1 / 60;
+  let x = cx, y = cy;
+  for (let i = 0; i < (o.steps || 90); i++) {
+    if (o.speed) {
+      x += Math.cos(o.ang) * o.speed * dt;
+      y += Math.sin(o.ang) * o.speed * dt;
+      // keep it in frame: wrap the travel but not the pose
+      if (x > CELL_W - 6 || x < 6) x = cx;
+      if (y > CELL_H - 4 || y < 8) y = cy;
+    }
+    rig.update(dt, {
+      x, y,
+      vx: Math.cos(o.ang) * (o.speed || 0), vy: Math.sin(o.ang) * (o.speed || 0),
+      facing: Math.cos(o.ang) >= 0 ? 1 : -1, anim: o.anim || 'idle',
+      dashing: false, aim: o.ang,
+    });
+  }
+  if (o.bite != null) {
+    rig.bite(o.ang);
+    // step to the requested point in the bite
+    const n = Math.round(o.bite * rig.biteDur / dt);
+    for (let i = 0; i < n; i++) {
+      rig.update(dt, { x, y, vx: 0, vy: 0, facing: 1, anim: 'idle', dashing: false, aim: o.ang });
+    }
+  }
+  return rig;
+}
+
+const CASES = [
+  ['idle E',      { ang: 0 }],
+  ['idle W',      { ang: Math.PI }],
+  ['idle S',      { ang: Math.PI / 2 }],
+  ['idle N',      { ang: -Math.PI / 2 }],
+  ['walk E',      { ang: 0, speed: 60, anim: 'walk' }],
+  ['run E',       { ang: 0, speed: 160, anim: 'run' }],
+  ['run SE',      { ang: 0.7, speed: 160, anim: 'run' }],
+  ['run S',       { ang: Math.PI / 2, speed: 160, anim: 'run' }],
+  ['bite 0.0',    { ang: 0, bite: 0.02 }],
+  ['bite 0.3',    { ang: 0, bite: 0.3 }],
+  ['bite 0.5',    { ang: 0, bite: 0.5 }],
+  ['bite 0.8',    { ang: 0, bite: 0.8 }],
+  ['bite W 0.4',  { ang: Math.PI, bite: 0.4 }],
+  ['bite S 0.4',  { ang: Math.PI / 2, bite: 0.4 }],
+  ['bite N 0.4',  { ang: -Math.PI / 2, bite: 0.4 }],
+  ['hurt',        { ang: 0, anim: 'hurt' }],
+];
+
+ctx.fillStyle = '#20281f';
+ctx.fillRect(0, 0, c.width, c.height);
+
+CASES.forEach(([label, o], i) => {
+  const col = i % COLS, row = (i / COLS) | 0;
+  bctx.clearRect(0, 0, CELL_W, CELL_H);
+  bctx.fillStyle = '#3a4a38';
+  bctx.fillRect(0, 0, CELL_W, CELL_H);
+  const rig = pose(o);
+  rig.draw(fake, {});
+  ctx.drawImage(buf, 0, 0, CELL_W, CELL_H, col * CELL_W * Z, row * CELL_H * Z, CELL_W * Z, CELL_H * Z);
+  ctx.save();
+  ctx.scale(2, 2);
+  drawText(ctx, label.toUpperCase(), (col * CELL_W * Z) / 2 + 3, (row * CELL_H * Z) / 2 + 3, '#c9e8b8');
+  ctx.restore();
+});
+window.__done = true;
+</script></body></html>

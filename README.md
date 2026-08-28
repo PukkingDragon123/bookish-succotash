@@ -62,11 +62,16 @@ Three things separate surviving a screen full of bullets from dying in it:
 
 - **Dodge.** Dashing through a bullet without touching it is a *graze*: it
   builds a combo that raises your damage and refunds stamina.
-- **Parry.** A claw swing opens a window. A hostile round caught inside that
-  window is turned around and sent back at double damage — triple if you
-  catch it in the first ninety milliseconds.
-- **Melee.** Claws cost stamina and hit in an arc. Against anything armoured
-  they are usually a worse idea than they feel like.
+- **Parry.** A bite opens a window. A hostile round caught inside that window
+  is turned around and sent back at double damage — triple if you catch it in
+  the first ninety milliseconds.
+- **The bite.** Not a sword swing with a white arc drawn over it. **X** picks
+  the nearest thing in the arc in front of her, throws her at it — the lunge
+  scales with the distance, so it closes ground as well as it hurts — and the
+  rig plays the snap: head thrust out along the target, jaw open on the way
+  in, shut at full extension. The only thing that appears on screen that was
+  not already there is blood. Against anything armoured it is still usually a
+  worse idea than it feels like.
 
 ## The story
 
@@ -102,6 +107,13 @@ Choosing **BEGIN** on the title screen starts the campaign in Block C:
 
 You can skip all of it from the menu and start in the basin instead. Tap **E**
 to move a line along; it never skips a beat that is waiting on you.
+
+Everything that talks does it in a speech bubble over its own head, with a tail
+pointing at whoever is speaking and their name on the shoulder of the box — Dax
+through the glass, Vane from the chair, sixteen neighbours in the basin. The
+bubble grows as the line is typed rather than opening at its final size, and
+flips underneath a speaker who is near the top of the screen. Only narration —
+the voice with no mouth — gets a plate at the bottom of the frame.
 
 ### The building
 
@@ -143,6 +155,15 @@ the legs never skate.
 She is small. Deliberately, conspicuously small — a thin pale streak with a
 black tail-tip and one eye that is not hers, moving through a forest full of
 things very much larger than she is.
+
+Up close she has a face: a cream skull with the dark bandit mask laid across
+the eyes along the head's own axis, a pale muzzle with a nose on the end of it,
+small round ears that flick when she is idle and pin flat when she is running,
+four black feet with toes on them, and a jaw that opens.
+
+Her left eye is a black bead that blinks. Her right one is a hard little optic
+in a steel housing that does not, because it has no lid — which is the one
+thing about her you can see from any distance.
 
 ### The first fight, which you lose
 

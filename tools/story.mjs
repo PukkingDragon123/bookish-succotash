@@ -236,23 +236,26 @@ const nearestEnemy = () => page.evaluate(() => {
 
 const rampageT0 = Date.now();
 let gunSeen = false, heliSeen = false, stalled = 0;
-while (Date.now() - rampageT0 < 210000) {
+while (Date.now() - rampageT0 < 330000) {
   const st = await snap();
   if (st.chapter === 'heli') heliSeen = true;
   if (st.chapter === 'heli' || st.chapter === 'done' || st.mode === 'forest') break;
   if (st.hasGun) gunSeen = true;
   const foe = await nearestEnemy();
   if (foe) {
-    await walkTo(foe.x, foe.y, 6000, { within: 22, fire: false, mash: false });
-    // close the distance, then swing at where they actually are
-    for (let i = 0; i < 14; i++) {
+    await walkTo(foe.x, foe.y, 4500, { within: 24, fire: false, mash: false });
+    // Close, then work on it. The bite has a cooldown and costs stamina, so
+    // the gun does most of the killing; hold it down and keep the mouse on
+    // whatever is nearest rather than tapping.
+    if (st.hasGun) await page.mouse.down();
+    for (let i = 0; i < 16; i++) {
       const f = await nearestEnemy();
       if (!f) break;
       await aimAt(f.x, f.y - 6);
-      await page.keyboard.press('KeyX');
-      if (st.hasGun) { await page.mouse.down(); await page.waitForTimeout(220); await page.mouse.up(); }
-      else await page.waitForTimeout(150);
+      if (i % 3 === 0) await page.keyboard.press('KeyX');
+      await page.waitForTimeout(110);
     }
+    if (st.hasGun) await page.mouse.up();
     continue;
   }
   const wp = await page.evaluate(() => {

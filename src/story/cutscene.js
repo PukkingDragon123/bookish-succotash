@@ -9,6 +9,7 @@ import { clamp } from '../engine/math.js';
 import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
 import { VIEW_W, VIEW_H } from '../engine/canvas.js';
+import { speechBubble } from '../ui/dialogue.js';
 
 export class Cutscene {
   constructor(beats, opts = {}) {
@@ -28,12 +29,15 @@ export class Cutscene {
     this.camHold = null;      // actor the camera is following
     this.enteredI = -1;       // last beat whose enter() has run
     this.game = null;
+    // Given a speaker name, return { x, y } in world space — or nothing, for
+    // narration, which has no mouth and belongs at the bottom of the screen.
+    this.speakerAt = opts.speakerAt || null;
   }
 
   get beat() { return this.beats[this.i]; }
 
   say(who, text, color) {
-    this.line = { who, text, chars: 0, color: color || P.ui, lines: wrapText(text, VIEW_W - 40) };
+    this.line = { who, text, chars: 0, color: color || P.ui, lines: wrapText(text, Math.min(200, VIEW_W - 60)) };
   }
 
   advance() {
@@ -166,26 +170,41 @@ export class Cutscene {
     }
 
     if (this.line) {
-      const boxH = Math.max(24, this.line.lines.length * LINE_H + 14);
-      const by = VIEW_H - bar - boxH - 4;
-      r.panel(12, by, VIEW_W - 24, boxH, 'rgba(6,10,10,0.92)', this.line.color);
-      if (this.line.who) {
-        const nw = measure(this.line.who, 1) + 6;
-        r.uiRect(15, by - 8, nw, 9, this.line.color);
-        drawText(ctx, this.line.who, 18, by - 7, '#0d1512');
-      }
-      // the affordance, small and in the corner of the box
-      if (this.line.chars >= this.line.text.length) {
-        const hint = 'E';
-        drawText(ctx, hint, VIEW_W - 18, by + boxH - 9,
-          Math.floor(game.time * 3) % 2 ? P.uiDim : P.uiAccent, { align: 'right' });
-      }
-      let used = 0;
-      for (let i = 0; i < this.line.lines.length; i++) {
-        const remain = Math.floor(this.line.chars) - used;
-        if (remain <= 0) break;
-        drawText(ctx, this.line.lines[i].slice(0, remain), 18, by + 7 + i * LINE_H, P.ui);
-        used += this.line.lines[i].length + 1;
+      // Somebody speaking gets a bubble over their head; narration — the
+      // voice with no mouth — stays in a plate at the bottom of the frame.
+      const at = this.line.who && this.speakerAt ? this.speakerAt(this.line.who, game) : null;
+      const done = this.line.chars >= this.line.text.length;
+
+      if (at && r.camera.visible(at.x, at.y, 140)) {
+        speechBubble(r, game, {
+          x: at.x, y: at.y - (at.h || 22),
+          lines: this.line.lines,
+          chars: Math.floor(this.line.chars),
+          name: this.line.who,
+          color: this.line.color,
+          more: done,
+          maxW: Math.min(210, VIEW_W - 60),
+        });
+      } else {
+        const boxH = Math.max(24, this.line.lines.length * LINE_H + 14);
+        const by = VIEW_H - bar - boxH - 4;
+        r.panel(12, by, VIEW_W - 24, boxH, 'rgba(6,10,10,0.92)', this.line.color);
+        if (this.line.who) {
+          const nw = measure(this.line.who, 1) + 6;
+          r.uiRect(15, by - 8, nw, 9, this.line.color);
+          drawText(ctx, this.line.who, 18, by - 7, '#0d1512');
+        }
+        if (done) {
+          drawText(ctx, 'E', VIEW_W - 18, by + boxH - 9,
+            Math.floor(game.time * 3) % 2 ? P.uiDim : P.uiAccent, { align: 'right' });
+        }
+        let used = 0;
+        for (let i = 0; i < this.line.lines.length; i++) {
+          const remain = Math.floor(this.line.chars) - used;
+          if (remain <= 0) break;
+          drawText(ctx, this.line.lines[i].slice(0, remain), 18, by + 7 + i * LINE_H, P.ui);
+          used += this.line.lines[i].length + 1;
+        }
       }
     }
 

@@ -470,52 +470,98 @@ export class Player {
 
   // --- close quarters ------------------------------------------------------
   /** Swing the claws. The opening frames double as a parry. */
+  /**
+   * The bite.
+   *
+   * Not a sword swing with a white arc drawn over it. She picks the nearest
+   * thing in front of her, throws herself at it, and closes her jaws on it —
+   * the lunge is the attack, the rig plays the snap, and the only thing on
+   * screen that was not already there is blood.
+   */
   tryMelee(game) {
     if (this.meleeCd > 0) return false;
     if (this.energy < MELEE_COST) {
       audio.play('deny', { vol: 0.5 });
       return false;
     }
+
+    // Pick a target first, so she commits to something rather than swinging at
+    // the cursor and hoping. Anything inside the arc counts; the closest wins.
+    let target = null, bestD = 1e9;
+    const reach = MELEE_REACH + 8;
+    for (const e of game.enemies) {
+      if (e.dead || e.spawnT > 0 || e.charmT > 0) continue;
+      const dx = e.x - this.x, dy = (e.y - 6) - (this.y - 8);
+      const d = Math.hypot(dx, dy);
+      if (d > reach + e.r) continue;
+      let diff = Math.atan2(dy, dx) - this.aim;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) > MELEE_ARC) continue;
+      if (d < bestD) { bestD = d; target = e; }
+    }
+
     this.energy -= MELEE_COST;
     this.meleeCd = MELEE_CD;
     this.meleeT = 0.24;
     this.parryT = PARRY_WINDOW;
     this.parryPerfectT = PARRY_PERFECT;
-    this.lastMeleeAngle = this.aim;
-    audio.play('dash', { vol: 0.5 });
 
-    // a small lunge, which is also what makes melee a movement option
-    this.vx += Math.cos(this.aim) * 150;
-    this.vy += Math.sin(this.aim) * 150;
+    // She goes where the bite is going. With a target that means straight at
+    // it; without one it is still a lunge, because the lunge is also how you
+    // cross ground quickly without spending a dash.
+    const ang = target
+      ? Math.atan2((target.y - 6) - (this.y - 8), target.x - this.x)
+      : this.aim;
+    this.lastMeleeAngle = ang;
+    this.aim = ang;
+    this.rig.bite(ang);
+
+    const lunge = target ? clamp(bestD * 7, 150, 320) : 165;
+    this.vx += Math.cos(ang) * lunge;
+    this.vy += Math.sin(ang) * lunge;
+    audio.play('dash', { vol: 0.35, pitch: 1.35 });
 
     const dmg = 26 * (1 + this.stats.damage) * this.damageMult;
     let hits = 0;
+    const strike = (e) => {
+      e.damage(dmg, game, { vx: Math.cos(ang), vy: Math.sin(ang), knock: 190, owner: this, melee: true });
+      // teeth, not sparks
+      particles.blood(e.x, e.y - 6, 7);
+      particles.burst(e.x, e.y - 6, 4, {
+        colors: ['#c04141', '#8e2a2a'], speed: 90, life: 0.32,
+        angle: ang, spread: 0.8, gravity: 260, vz: 40,
+      });
+      hits++;
+    };
+
     for (const e of game.enemies) {
       if (e.dead || e.spawnT > 0 || e.charmT > 0) continue;
-      const dx = e.x - this.x, dy = e.y - 6 - (this.y - 8);
+      const dx = e.x - this.x, dy = (e.y - 6) - (this.y - 8);
       const d = Math.hypot(dx, dy);
       if (d > MELEE_REACH + e.r) continue;
-      let diff = Math.atan2(dy, dx) - this.aim;
+      let diff = Math.atan2(dy, dx) - ang;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       if (Math.abs(diff) > MELEE_ARC / 2) continue;
-      e.damage(dmg, game, { vx: Math.cos(this.aim), vy: Math.sin(this.aim), knock: 190, owner: this, melee: true });
-      particles.burst(e.x, e.y - 6, 8, { colors: ['#ffffff', P.furCream, P.nestSteelHi], speed: 120, life: 0.3, additive: true, angle: this.aim, spread: 0.7 });
-      hits++;
+      strike(e);
     }
-    // Machines take the claws badly; so do saw traps in the way.
+    // Machines take the teeth badly; so do saw traps in the way.
     for (const h of game.hazards) {
       if (h.dead || !h.damage) continue;
       if (Math.hypot(h.x - this.x, h.y - this.y) < MELEE_REACH + 6) { h.damage(dmg, game); hits++; }
     }
+
     if (hits) {
-      game.r.camera.addShake(2.4);
-      audio.play('flesh', { vol: 0.7 });
-      game.slowmo(0.55, 0.06);
+      game.r.camera.addShake(2.2);
+      audio.play('flesh', { vol: 0.8 });
+      game.slowmo(0.5, 0.07);
+    } else {
+      audio.play('hit', { vol: 0.2, pitch: 1.5 });
     }
-    game.spawnSlash(this.x, this.y - 8, this.aim, MELEE_REACH, MELEE_ARC);
     return true;
   }
+
 
   get parryActive() { return this.parryT > 0; }
 
@@ -821,15 +867,22 @@ export class Player {
     // held weapon, rotated to the aim
     this.drawWeapon(r, game, flipped);
 
-    // the guard arc: visible feedback for a window measured in tenths
+    // The guard window still needs to be visible, but a two-pixel arc swept
+    // round the whole animal is a special effect, not information. A glint on
+    // her teeth says the same thing and stays out of the way.
     if (this.parryT > 0) {
+      const nose = this.rig.nose();
       const f = this.parryT / 0.18;
       const perfect = this.parryPerfectT > 0;
-      r.arc(this.x, this.y - 8, 20, this.lastMeleeAngle - 0.6, this.lastMeleeAngle + 0.6,
-        perfect ? '#ffffff' : P.sulfurHi, 2, f * 0.9);
+      r.rect(nose.x + Math.cos(this.lastMeleeAngle) * 3 - 1, nose.y + Math.sin(this.lastMeleeAngle) * 3 - 1,
+        2, 2, perfect ? '#ffffff' : P.sulfurHi);
+      if (perfect) r.glow(nose.x, nose.y, 4, 'rgba(255,255,255,0.5)', f);
     }
+    // A parry actually landing does get a flash, because it is the single best
+    // thing you can do in a fight and it should feel like it.
     if (this.parryFlash > 0) {
-      r.ring(this.x, this.y - 8, 14 + (1 - this.parryFlash) * 16, '#ffffff', 2, this.parryFlash * 0.8);
+      const nose = this.rig.nose();
+      r.ring(nose.x, nose.y, 6 + (1 - this.parryFlash) * 10, '#ffffff', 1, this.parryFlash * 0.7);
     }
 
     // shield bubble
@@ -841,9 +894,11 @@ export class Player {
 
     // Cybernetic eye glow, tracked to the actual skull the rig solved this
     // frame rather than to a fixed offset from the feet.
+    // The optic is one pixel on a very small animal. A five-pixel bloom on it
+    // buries the whole face, so it gets a glint, not a headlamp.
     const eye = this.rig.eyePos();
-    r.glow(eye.x, eye.y, this.overclock ? 11 : 5,
-      this.overclock ? 'rgba(180,245,255,0.8)' : 'rgba(77,225,255,0.5)', 1);
+    r.glow(eye.x, eye.y, this.overclock ? 7 : 2.5,
+      this.overclock ? 'rgba(180,245,255,0.7)' : 'rgba(77,225,255,0.35)', 1);
 
     // overclock aura
     if (this.overclock) {

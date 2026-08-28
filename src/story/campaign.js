@@ -152,6 +152,22 @@ export class Campaign {
   // ======================================================================
   //  setup
   // ======================================================================
+  /**
+   * Where a given speaker is standing, so their line can be a bubble over
+   * their head instead of a bar at the bottom of the screen. An unknown name
+   * — or the empty name narration uses — falls through to the plate.
+   */
+  speakerAt(who, game) {
+    if (!who) return null;
+    const key = who.toUpperCase();
+    if (key === 'DAX') return this.dax && !this.dax.dead ? this.dax : null;
+    if (key === 'VANE') return this.vane;
+    if (key === 'GUARD') return this.guard || this.guardEnemy;
+    if (key === 'SUBJECT 41') return game.player;
+    if (key.startsWith('VANE')) return this.vane;
+    return null;
+  }
+
   /** True while a scripted beat is driving the camera itself. */
   get ownsCamera() {
     return !!(this.cut && this.cut.beat && this.cut.beat.cam) || this.blockPlayer;
@@ -196,6 +212,7 @@ export class Campaign {
   play(beats, opts = {}) {
     const cs = new Cutscene(beats, Object.assign({ letterbox: 1 }, opts, {
       onDone: () => { if (this.cut === cs) this.cut = null; },
+      speakerAt: (who, game) => this.speakerAt(who, game),
     }));
     this.cut = cs;
     return cs;
