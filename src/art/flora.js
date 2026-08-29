@@ -99,9 +99,9 @@ function drawSpruce(ctx, rng, sway) {
 function drawAspen(ctx, rng, sway) {
   const W = ctx.canvas.width, H = ctx.canvas.height;
   const cx = W / 2, base = H - 1;
-  const trunkH = Math.round(H * 0.62);
+  const trunkH = Math.round(H * 0.46);
   const lean = (rng() - 0.5) * 3;
-  taper(ctx, cx, base, cx + lean + sway * 0.5, base - trunkH, 2.2, 1.4, P.aspenBark);
+  taper(ctx, cx, base, cx + lean + sway * 0.5, base - trunkH, 2.4, 1.5, P.aspenBark);
   rect(ctx, cx - 2, base - trunkH + 2, 1, trunkH - 3, shade(P.aspenBark, -0.18));
   // the black "eyes" on aspen bark
   for (let i = 0; i < 5; i++) {
@@ -115,22 +115,22 @@ function drawAspen(ctx, rng, sway) {
   // on it, which is why a hillside of them looked like a row of lollipops.
   const topX = cx + lean + sway * 2.2;
   const topY = base - trunkH - 1;
-  const leaves = 26;
+  const leaves = 54;
   for (let i = 0; i < leaves; i++) {
     const a = rng() * TAU;
-    const rr = Math.sqrt(rng()) * 7.2;
+    const rr = Math.sqrt(rng()) * 11.5;
     const bx = topX + Math.cos(a) * rr + sway * (0.4 + rr * 0.09);
-    const by = topY + Math.sin(a) * rr * 0.78 - 1;
+    const by = topY + Math.sin(a) * rr * 0.72 - 5;
     // lit on top, shadowed underneath, and a few dead leaves gone to rust
-    const up = (by - topY) < -1;
+    const up = (by - topY) < -5;
     const col = rng() < 0.10 ? P.aspenRust
       : up ? P.aspenLeafHi
-      : (by - topY) > 2.5 ? shade(P.aspenLeaf, -0.24) : P.aspenLeaf;
-    ell(ctx, bx, by, 1.9 + rng() * 0.8, 1.5 + rng() * 0.6, col);
+      : (by - topY) > 0 ? shade(P.aspenLeaf, -0.24) : P.aspenLeaf;
+    ell(ctx, bx, by, 2.1 + rng() * 0.9, 1.7 + rng() * 0.7, col);
   }
   // a couple of gaps punched back through, so the crown has sky in it
   for (let i = 0; i < 3; i++) {
-    const a = rng() * TAU, rr = 2 + rng() * 4;
+    const a = rng() * TAU, rr = 3 + rng() * 6;
     ctx.clearRect(Math.round(topX + Math.cos(a) * rr), Math.round(topY + Math.sin(a) * rr * 0.7), 2, 1);
   }
 }
@@ -286,6 +286,94 @@ function drawFlower(ctx, rng, kind) {
       break;
     }
   }
+}
+
+/**
+ * A reed bed. Tall, straight, and it goes over further than anything else on
+ * the map when a gust comes through, which is most of why it is worth drawing.
+ */
+function drawReeds(ctx, rng) {
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const cx = W / 2, base = H - 1;
+  for (let i = 0; i < 11; i++) {
+    const t = (i / 10) * 2 - 1;
+    const x = cx + t * 7 + (rng() - 0.5) * 1.5;
+    const hgt = H - 3 - Math.abs(t) * 5 - rng() * 3;
+    const col = i % 3 === 0 ? '#a8b46a' : i % 3 === 1 ? '#8a9a52' : '#6b7a42';
+    line(ctx, x, base, x + t * 1.6, base - hgt, col);
+    // the seed head — a dark thumb at the top of every third stem
+    if (i % 3 === 0) ell(ctx, x + t * 1.6, base - hgt + 1.5, 0.9, 2.0, '#6b5a2e');
+  }
+  for (let i = 0; i < 3; i++) {
+    line(ctx, cx - 5 + i * 5, base, cx - 8 + i * 6, base - 3, '#4d5a34');
+  }
+}
+
+/** Resin bleeding down a scarred trunk. Amber, and it catches the light. */
+function drawResinSeep(ctx, rng) {
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const cx = W / 2, base = H - 1;
+  taper(ctx, cx, base, cx, base - (H - 3), 3.2, 2.6, P.bark);
+  rect(ctx, cx - 3, base - H + 4, 2, H - 5, shade(P.bark, -0.28));
+  // the wound, and the run of amber below it
+  ell(ctx, cx + 0.5, base - H * 0.6, 2.2, 3.4, '#8a6238');
+  for (let i = 0; i < 4; i++) {
+    const y = base - H * 0.6 + i * 3;
+    ell(ctx, cx + 0.5 + (rng() - 0.5), y, 1.6 - i * 0.2, 2.2, i < 2 ? '#e8b455' : '#c88a2a');
+  }
+  ell(ctx, cx + 0.8, base - 4, 3.0, 1.6, '#c88a2a');
+  px(ctx, Math.round(cx), Math.round(base - H * 0.62), '#f4d68a');
+}
+
+/** What the birds leave under a roost. */
+function drawFeatherFall(ctx, rng) {
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const base = H - 1;
+  for (let i = 0; i < 5; i++) {
+    const x = 3 + rng() * (W - 6), y = base - rng() * 5;
+    const a = rng() * Math.PI;
+    const ex = x + Math.cos(a) * 5, ey = y - Math.abs(Math.sin(a)) * 4;
+    line(ctx, x, y, ex, ey, '#5a5448');
+    for (let j = 1; j <= 3; j++) {
+      const t = j / 4;
+      line(ctx, x + (ex - x) * t, y + (ey - y) * t,
+           x + (ex - x) * t + 1.6, y + (ey - y) * t - 0.8, j % 2 ? '#8a94a0' : '#6b7480');
+    }
+  }
+  speckle(ctx, 2, base - 2, W - 4, 3, '#9aa2ac', 0.18, 5);
+}
+
+/** A cut bank of wet clay. */
+function drawClayBank(ctx, rng) {
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const cx = W / 2, base = H - 1;
+  ellShaded(ctx, cx, base - 4, 10, 5.5, '#8a5a42', '#a87458', '#5c3a2a');
+  ellShaded(ctx, cx - 6, base - 2, 5, 3, '#7a4e38', '#9c6a50', '#523226');
+  // the horizontal bedding lines that say "bank" and not "boulder"
+  for (let i = 0; i < 3; i++) {
+    line(ctx, cx - 8 + rng() * 2, base - 3 - i * 2.4, cx + 8 - rng() * 2, base - 3.6 - i * 2.4, '#6b4432');
+  }
+  speckle(ctx, cx - 8, base - 7, 16, 6, '#b98a6a', 0.14, 9);
+}
+
+/** Winterkill, stacked where the drifts left it. */
+function drawBonePile(ctx, rng) {
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const cx = W / 2, base = H - 1;
+  ell(ctx, cx, base - 1, 11, 3, '#4d4436');
+  for (let i = 0; i < 7; i++) {
+    const x = cx - 8 + rng() * 16, y = base - 2 - rng() * 6;
+    const a = (rng() - 0.5) * 1.6;
+    const ex = x + Math.cos(a) * 5, ey = y + Math.sin(a) * 2;
+    line(ctx, x, y, ex, ey, i % 2 ? '#d8d0b8' : '#b2a98e');
+    circ(ctx, x, y, 1.2, '#e6e0c8');
+    circ(ctx, ex, ey, 1.1, '#e6e0c8');
+  }
+  // a skull, because a bone pile without one is a pile of sticks
+  ell(ctx, cx + 4, base - 4, 3.2, 2.6, '#e0d8c0');
+  taper(ctx, cx + 6, base - 4, cx + 10, base - 3, 2.0, 1.2, '#d2c9ae');
+  px(ctx, Math.round(cx + 3.4), Math.round(base - 4.6), '#3a352c');
+  px(ctx, Math.round(cx + 5.2), Math.round(base - 4.4), '#3a352c');
 }
 
 // --- rocks, ore, minerals --------------------------------------------------
@@ -480,7 +568,7 @@ const TREE_KINDS = {
   pineSmall: { w: 26, h: 38, fn: (c, r, s) => drawLodgepole(c, r, s, { tiers: 4, maxW: 11, trunkH: 10 }), shadow: 5 },
   pineTall: { w: 38, h: 66, fn: (c, r, s) => drawLodgepole(c, r, s, { tiers: 6, maxW: 16, trunkH: 22 }), shadow: 8 },
   spruce: { w: 30, h: 54, fn: drawSpruce, shadow: 6 },
-  aspen: { w: 30, h: 48, fn: drawAspen, shadow: 5 },
+  aspen: { w: 34, h: 50, fn: drawAspen, shadow: 6 },
   snag: { w: 22, h: 46, fn: drawSnag, shadow: 4 },
   burnt: { w: 26, h: 40, fn: (c, r, s) => drawLodgepole(c, r, s, { burnt: true, trunkH: 30 }), shadow: 4 },
   stump: { w: 16, h: 12, fn: (c, r) => drawStump(c, r), shadow: 5, static: true },
@@ -520,6 +608,9 @@ const PLANT_KINDS = {
   mushroom: { bend: 0, w: 14, h: 10, fn: (c, r) => drawFlower(c, r, 'mushroom') },
   fern: { bend: 2.2, w: 18, h: 14, fn: (c, r) => drawFlower(c, r, 'fern') },
   grass: { bend: 4.2, w: 12, h: 10, fn: (c, r) => drawFlower(c, r, 'grass') },
+  reeds: { bend: 3.4, w: 20, h: 22, fn: (c, r) => drawReeds(c, r) },
+  resin: { bend: 0.4, w: 16, h: 20, fn: (c, r) => drawResinSeep(c, r) },
+  feathers: { bend: 1.2, w: 18, h: 12, fn: (c, r) => drawFeatherFall(c, r) },
 };
 export const PLANT_KIND_NAMES = Object.keys(PLANT_KINDS);
 
@@ -556,6 +647,8 @@ const ROCK_KINDS = {
   coal: { w: 22, h: 18, fn: (c, r) => drawRock(c, r, 'coal', 1) },
   saltpeter: { w: 24, h: 12, fn: (c, r) => drawSaltpeterCrust(c, r) },
   sulfur: { w: 22, h: 14, fn: (c, r) => drawSulfurMound(c, r) },
+  clay: { w: 24, h: 16, fn: (c, r) => drawClayBank(c, r) },
+  bones: { w: 26, h: 16, fn: (c, r) => drawBonePile(c, r) },
 };
 export const ROCK_KIND_NAMES = Object.keys(ROCK_KINDS);
 

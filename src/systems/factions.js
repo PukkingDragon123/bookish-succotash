@@ -167,7 +167,7 @@ export class Alliances {
       const t = f.tiers[i];
       if (game) {
         game.bigToast(f.name.toUpperCase() + ' — ' + t.title.toUpperCase(), t.text, f.color);
-        audio.play('unlock', { vol: 0.7 });
+        audio.play('levelup', { vol: 0.7 });
         if (t.gift) {
           for (const [item, n] of Object.entries(t.gift)) game.player.inv.add(item, n);
           game.toast('A gift is waiting at the den.', f.color);

@@ -71,6 +71,7 @@ export class Game {
     this.mode = 'forest';            // 'lab' while the campaign is running
     this.campaign = null;
     this.firstStand = null;
+    this.charges = [];
     this.standDelay = 0;
     this.camp = null;
     this.labDark = 0;                // block-wide blackout, 0..1
@@ -338,6 +339,7 @@ export class Game {
       if (this.occupation) {
         this.occupation.update(sdt, this);
         this.updateOutposts(sdt);
+        this.updateCharges(sdt);
       }
       this.updateDiscovery(sdt);
     }
@@ -659,6 +661,27 @@ export class Game {
       consider(pr, 'station', 'USE ' + pr.station.toUpperCase(), pr.x, pr.y, 30);
     }
 
+    // Their hardware. Standing under a relay mast with a satchel charge is
+    // the moment the whole loop is built around, so it gets its own prompt
+    // ahead of anything you might happen to be standing on.
+    const post = this.outpostAt(p.x, p.y + 8);
+    if (post) {
+      if (post.def.frees && !post.pensOpen && this.toolCount('cutters') > 0) {
+        consider(post, 'pens', 'CUT THE PENS OPEN', post.x, post.y, 40);
+      } else if (p.inv.get('chargeBig') > 0) {
+        consider(post, 'breach', 'SET BREACHING CHARGE', post.x, post.y, 40);
+      } else if (p.inv.get('charge') > 0) {
+        consider(post, 'charge', 'SET SATCHEL CHARGE', post.x, post.y, 40);
+      } else {
+        consider(post, 'scout', post.def.label.toUpperCase() + '  ' + Math.ceil(post.hp) + '/' + post.maxHp, post.x, post.y, 40);
+      }
+    }
+    // A cache is a one-time reward for having walked somewhere.
+    for (const l of (this.world.landmarks || [])) {
+      if (!l.cache || l.cache.taken) continue;
+      consider(l, 'cache', 'OPEN THE CACHE', l.cache.x, l.cache.y, 30);
+    }
+
     if (!best) {
       const node = this.world.nearestNode(p.x, p.y, 22);
       if (node) {
@@ -688,6 +711,53 @@ export class Game {
           const a = best.obj;
           const tool = this.nextToolFor(a);
           if (tool && a.giveTool(tool, this)) this.toolBag[tool]--;
+          break;
+        }
+        case 'charge':
+        case 'breach': {
+          const big = best.kind === 'breach';
+          const item = big ? 'chargeBig' : 'charge';
+          if (!p.inv.take(item, 1)) break;
+          const o = best.obj;
+          o.alert(this);
+          this.charges.push({ x: o.x, y: o.y + 6, t: big ? 4.5 : 3.2, total: big ? 4.5 : 3.2,
+                              dmg: big ? 400 : 130, r: big ? 90 : 60, outpost: o });
+          audio.play('craft', { vol: 0.6, pitch: 0.7 });
+          this.toast(big ? 'BREACHING CHARGE SET — MOVE' : 'CHARGE SET — MOVE', P.uiWarn, 2.4);
+          break;
+        }
+        case 'pens': {
+          const o = best.obj;
+          o.pensOpen = true;
+          this.toolBag.cutters = Math.max(0, (this.toolBag.cutters || 0) - 1);
+          o.alert(this);
+          this.announce('THE PENS ARE OPEN', 'THEY REMEMBER THIS', P.uiGood, 3.5);
+          for (let i = 0; i < (o.def.frees || 3); i++) {
+            const a = this.wildlife.spawnFreed(o.x + rnd(-26, 26), o.y + rnd(-14, 18), this);
+            if (a) {
+              a.addTrust(40, this, 'freed');
+              const f = factionOf(a.key);
+              if (f) this.alliances.add(f, 5, this, 'cut their kin loose');
+            }
+          }
+          break;
+        }
+        case 'scout': {
+          const o = best.obj;
+          this.hud.subtitle(o.def.desc, 4);
+          this.toast(o.guards.length + ' ON THE GROUND  -  ' + o.def.label.toUpperCase(), P.uiWarn, 3);
+          break;
+        }
+        case 'cache': {
+          const l = best.obj;
+          l.cache.taken = true;
+          audio.play('levelup', { vol: 0.7 });
+          this.announce(l.name.toUpperCase(), 'SOMEBODY LEFT THIS AND DID NOT COME BACK', P.favor, 3.6);
+          for (const item of l.cache.items) {
+            this.dropPickup(item, 4 + Math.floor(Math.random() * 4), l.cache.x + rnd(-10, 10), l.cache.y + rnd(-6, 6));
+          }
+          this.dropPickup('scrap', 3, l.cache.x, l.cache.y);
+          if (l.faction) this.alliances.add(l.faction, 4, this, 'they had left it for you');
           break;
         }
         case 'revive': {
@@ -764,7 +834,7 @@ export class Game {
       this.found++;
       this.panels.mapDirty = true;
       this.toast('FOUND: ' + l.name.toUpperCase(), P.uiAccent, 3);
-      audio.play('unlock', { vol: 0.35, pitch: 1.3 });
+      audio.play('coinup', { vol: 0.4, pitch: 1.3 });
       if (l.def.blurb) this.hud.subtitle(l.def.blurb, 3.4);
       if (l.def.reveals) {
         // a lookout shows you what it can see
@@ -796,6 +866,8 @@ export class Game {
         this.panels.mapDirty = true;
         this.toast('LES NEST — ' + o.def.label.toUpperCase(), P.uiBad, 3);
         this.hud.subtitle(o.def.desc, 3.4);
+        this.hud.ping(o.x, o.y, P.uiBad, 8);
+        this.npcsReact('outpostFound', 0.8, 900);
       }
       if (near && !o.spawned) {
         o.spawned = true;
@@ -856,6 +928,7 @@ export class Game {
    */
   onOutpostRazed(o) {
     this.announce(o.name.toUpperCase() + ' RAZED', 'THE BASIN GETS QUIETER', P.uiGood, 4);
+    this.npcsReact('outpostRazed', 0.9, 2000);
     for (const [item, n] of Object.entries(o.def.loot || {})) {
       this.dropPickup(item, n, o.x + rnd(-16, 16), o.y + rnd(-8, 14));
     }
@@ -913,6 +986,83 @@ export class Game {
     }
     if (o.alarmT > 0) {
       r.ring(o.x, o.y - 6, 20 + (3 - o.alarmT) * 26, P.uiBad, 1, o.alarmT / 3);
+    }
+  }
+
+  /**
+   * Charges you have set, counting down.
+   *
+   * The fuse is the interesting part. It is long enough that you have to
+   * decide whether to stand and hold the ground or run for the treeline, and
+   * short enough that the decision is not free.
+   */
+  updateCharges(dt) {
+    for (let i = this.charges.length - 1; i >= 0; i--) {
+      const c = this.charges[i];
+      c.t -= dt;
+      // a tick that gets faster, so you can hear how long you have
+      const rate = c.t < 1 ? 0.1 : c.t < 2 ? 0.22 : 0.45;
+      c.beep = (c.beep || 0) - dt;
+      if (c.beep <= 0) {
+        c.beep = rate;
+        audio.play('ui', { vol: 0.32, pitch: 1 + (1 - c.t / c.total) });
+        particles.spawn({ x: c.x, y: c.y - 2, z: 2, vx: 0, vy: 0, vz: 8, life: 0.3, size: 1, color: P.uiBad });
+      }
+      if (c.t > 0) continue;
+      this.charges.splice(i, 1);
+      this.explode(c.x, c.y, c.r, c.dmg * 0.5, true, this.player);
+      if (c.outpost && !c.outpost.razed) c.outpost.damage(c.dmg, this);
+      this.r.camera.addShake(7);
+    }
+  }
+
+  /** Draw the fuse markers. */
+  drawCharges(r) {
+    for (const c of this.charges) {
+      const t = 1 - c.t / c.total;
+      r.rect(c.x - 3, c.y - 4, 6, 4, '#3a3630');
+      r.rect(c.x - 3, c.y - 4, 6, 1, '#5c5648');
+      const blink = Math.floor(c.t * (c.t < 1.5 ? 8 : 3)) % 2 === 0;
+      r.rect(c.x + 1, c.y - 3, 1, 1, blink ? P.uiBad : '#40201c');
+      r.ring(c.x, c.y - 2, 6 + t * 18, P.uiBad, 1, (1 - t) * 0.5);
+    }
+  }
+
+  /**
+   * The allies turning up.
+   *
+   * This is what an alliance is actually for. When you pick a fight at an
+   * outpost, every faction that has sworn to you sends what it promised —
+   * bison and elk that go straight through the middle, wolves onto the
+   * flanks, ravens for the drones. They arrive from off-screen, which is the
+   * whole feeling of it.
+   */
+  summonAllies(o) {
+    if (!this.alliances || o.alliesCalled) return;
+    o.alliesCalled = true;
+    let sent = 0;
+    for (const k of FACTION_KEYS) {
+      const tier = this.alliances.alliesFrom(k);
+      if (!tier) continue;
+      const from = Math.random() * TAU;
+      for (let i = 0; i < (tier.allies || 2); i++) {
+        const key = tier.ally[i % tier.ally.length];
+        if (key === 'ridge') {
+          const n = this.npcs.find(x => x.recruited && !x.dead);
+          if (n) { n.x = o.x + Math.cos(from) * 200; n.y = o.y + Math.sin(from) * 170; sent++; }
+          continue;
+        }
+        const a = this.wildlife.spawnAlly
+          ? this.wildlife.spawnAlly(key, o.x + Math.cos(from + i * 0.5) * 210,
+                                         o.y + Math.sin(from + i * 0.5) * 175, this)
+          : null;
+        if (a) sent++;
+      }
+    }
+    if (sent) {
+      this.announce('THEY CAME', 'THE BASIN FIGHTS WITH YOU', P.favor, 3.6);
+      audio.play('roar', { vol: 0.6 });
+      this.npcsReact('allied', 0.9, 2000);
     }
   }
 
@@ -1539,9 +1689,13 @@ export class Game {
       this.addTool(rec.give.tool);
       this.toast(TOOLS[rec.give.tool].name.toUpperCase() + ' BUILT  -  [E] ON A FOLLOWER TO FIT IT', TOOLS[rec.give.tool].color, 4);
     }
+    if (rec.give.smokeBombs) {
+      this.smokeBombCharges += rec.give.smokeBombs;
+      this.toast('SMOKE POTS +' + rec.give.smokeBombs + '  [G TO THROW]', P.uiGood, 3.4);
+    }
     if (rec.give.waterCap) { p.inv.setCap('water', p.inv.cap('water') + rec.give.waterCap); this.toast('WATER CAPACITY UP', P.waterFoam); }
     for (const k in rec.give) {
-      if (['weapon', 'chipSlot', 'waterCap', 'tool'].includes(k)) continue;
+      if (['weapon', 'chipSlot', 'waterCap', 'tool', 'smokeBombs'].includes(k)) continue;
       p.grant(k, rec.give[k], this, p.x, p.y - 18);
     }
     audio.play('craft');
@@ -1618,6 +1772,7 @@ export class Game {
     if (!lab) this.fire.draw(r, this.time);
     else this.campaign.drawWorld(r, this);
     this.bullets.draw(r);
+    this.drawCharges(r);
     this.drawChainArcs(r);
     this.drawSlashes(r);
     if (!lab) this.squad.drawWorld(r, this);

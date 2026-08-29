@@ -287,8 +287,53 @@ export class Hud {
   }
 
   // --- fire-event objective tracker ----------------------------------------
+  /**
+   * A compass to the nearest thing worth walking to.
+   *
+   * The basin is big now, and a big map with no direction in it is just a
+   * place to get lost. This points at the nearest Les Nest outpost you know
+   * about — or, before you know about any, at the nearest place you have not
+   * been. It is deliberately only an arrow and a distance: it tells you which
+   * way, never what to do when you get there.
+   */
+  drawCompass(r, ctx, game) {
+    if (!game.occupation || game.panels.open) return;
+    const p = game.player;
+    let target = null, best = Infinity, hostile = false;
+    for (const o of game.occupation.outposts) {
+      if (o.razed || !o.found) continue;
+      const d = Math.hypot(o.x - p.x, o.y - p.y);
+      if (d < best) { best = d; target = o; hostile = true; }
+    }
+    if (!target) {
+      for (const l of (game.world.landmarks || [])) {
+        if (l.found) continue;
+        const d = Math.hypot(l.x - p.x, l.y - p.y);
+        if (d < best) { best = d; target = l; hostile = false; }
+      }
+    }
+    if (!target) return;
+
+    const label = hostile ? target.name.toUpperCase() : 'SOMEWHERE OUT THERE';
+    const col = hostile ? P.uiBad : P.uiDim;
+    const x = VIEW_W - 6, y = this.touch ? 70 : 30;
+    drawText(ctx, label, x, y, col, { align: 'right', shadow: '#000' });
+    drawText(ctx, Math.round(best / 16) + 'm', x, y + 9, P.uiDim, { align: 'right', shadow: '#000' });
+
+    // the arrow, drawn as a wedge of pixels so it stays crisp at any scale
+    const a = Math.atan2(target.y - p.y, target.x - p.x);
+    const ax = x - 30, ay = y + 20;
+    for (let i = 0; i < 7; i++) {
+      const t = i / 6;
+      const px2 = ax + Math.cos(a) * (t * 9 - 4);
+      const py2 = ay + Math.sin(a) * (t * 9 - 4);
+      r.uiRect(Math.round(px2), Math.round(py2), 2, 2, i > 4 ? col : P.uiDim);
+    }
+  }
+
   drawObjective(r, ctx, game) {
     const d = game.director;
+    this.drawCompass(r, ctx, game);
     if (d.phase !== PHASE.FIRE) return;
     const x = VIEW_W - 106, y = 22;
     r.panel(x, y, 100, 30, 'rgba(30,10,6,0.8)', P.fire3);
@@ -335,7 +380,7 @@ export class Hud {
     if (this.sub) {
       const a = clamp(this.sub.t / 0.6, 0, 1);
       ctx.globalAlpha = a;
-      drawText(ctx, this.sub.text, VIEW_W / 2, VIEW_H - 62, P.uiDim, { align: 'center', shadow: '#000' });
+      drawText(ctx, this.sub.text, VIEW_W / 2, VIEW_H - 78, P.uiDim, { align: 'center', shadow: '#000' });
       ctx.globalAlpha = 1;
     }
     // Pings sit on the rim of the screen pointing at where the thing happened,

@@ -867,6 +867,28 @@ export class Wildlife {
 }
 
 /**
+ * An ally arriving for a raid.
+ *
+ * It comes in already devoted, already fighting, and already pointed at the
+ * outpost — a sworn faction turning up should feel like the cavalry, not like
+ * four more animals wandering about being skittish.
+ */
+Wildlife.prototype.spawnAlly = function (key, x, y, game) {
+  const a = new Animal(key, x, y);
+  a.trust = 100;
+  a.bonded = true;
+  a.devoted = true;
+  a.order = 'attack';
+  a.state = 'attack';
+  a.anim = 'run';
+  a.hp = a.maxHpStat;
+  a.summoned = true;
+  this.animals.push(a);
+  particles.burst(x, y - 6, 14, { colors: ['#c8b48a', '#8a7a5c'], speed: 90, life: 0.6, gravity: 60, vz: 40 });
+  return a;
+};
+
+/**
  * Something coming out of a pen.
  *
  * Whatever Les Nest had in the cages was worth catching, so it skews toward

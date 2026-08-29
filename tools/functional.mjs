@@ -315,6 +315,74 @@ await check('faction tiers unlock passives and allies', () => {
   };
 });
 
+await check('a satchel charge takes a bite out of a structure', () => {
+  const g = window.game;
+  const o = g.occupation.standing[0];
+  g.player.x = o.x; g.player.y = o.y - 4;
+  g.player.inv.add('charge', 2);
+  g.updateInteraction();
+  const prompt = g.prompt && g.prompt.kind;
+  g.dialogue.close && g.dialogue.close();
+  g.input.pressed.add('KeyE');
+  g.updateInteraction();
+  g.input.pressed.delete('KeyE');
+  const set = g.charges.length;
+  const hpBefore = o.hp;
+  for (let i = 0; i < 400; i++) g.updateCharges(0.02);
+  return { ok: prompt === 'charge' && set >= 1 && o.hp < hpBefore, prompt, set, dealt: Math.round(hpBefore - o.hp) };
+});
+
+await check('cutters open the pens without razing the place', () => {
+  const g = window.game;
+  const o = g.occupation.standing.find(x => x.def.frees);
+  if (!o) return { ok: false, why: 'no pens standing' };
+  g.player.x = o.x; g.player.y = o.y - 4;
+  g.addTool('cutters');
+  const before = g.wildlife.animals.length;
+  g.updateInteraction();
+  const prompt = g.prompt && g.prompt.kind;
+  g.input.pressed.add('KeyE');
+  g.updateInteraction();
+  g.input.pressed.delete('KeyE');
+  return { ok: prompt === 'pens' && o.pensOpen && !o.razed && g.wildlife.animals.length > before,
+           prompt, freed: g.wildlife.animals.length - before };
+});
+
+await check('sworn factions turn up when the alarm goes', () => {
+  const g = window.game;
+  g.alliances.add('pack', 100, g, 'test');
+  const o = g.occupation.standing.find(x => !x.alerted && !x.alliesCalled);
+  if (!o) return { ok: false, why: 'everything already alerted' };
+  const before = g.wildlife.animals.filter(a => a.summoned).length;
+  o.alert(g);
+  const after = g.wildlife.animals.filter(a => a.summoned).length;
+  return { ok: after > before && o.alliesCalled, arrived: after - before };
+});
+
+await check('named places carry a cache and their own harvest', () => {
+  const g = window.game;
+  const l = (g.world.landmarks || []).find(x => x.cache && !x.cache.taken);
+  if (!l) return { ok: false, why: 'no cache' };
+  const nearby = g.world.nodes.filter(n => n.alive && Math.hypot(n.x - l.x, n.y - l.y) < 160);
+  g.player.x = l.cache.x; g.player.y = l.cache.y;
+  const drops = g.pickups.list.length;
+  g.updateInteraction();
+  const prompt = g.prompt && g.prompt.kind;
+  g.input.pressed.add('KeyE');
+  g.updateInteraction();
+  g.input.pressed.delete('KeyE');
+  return { ok: prompt === 'cache' && l.cache.taken && g.pickups.list.length > drops && nearby.length >= 3,
+           kind: l.kind, nodes: nearby.length };
+});
+
+await check('landmark materials exist and are only there', () => {
+  const g = window.game;
+  const types = new Set(g.world.nodes.filter(n => n.alive).map(n => n.type));
+  const want = ['reedbed', 'claybank', 'resinseep', 'oldpine', 'bonepile', 'featherfall'];
+  const missing = want.filter(t => !types.has(t));
+  return { ok: missing.length === 0, missing };
+});
+
 // --- waves ------------------------------------------------------------------
 await page.evaluate(() => {
   const g = window.game;

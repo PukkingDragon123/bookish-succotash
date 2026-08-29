@@ -22,11 +22,31 @@ export const RESOURCES = {
   ammo:      { name: 'Rounds', icon: 'ammo', color: '#c9a23c', hint: 'Crafted from gunpowder and iron.' },
   meds:      { name: 'Salve', icon: 'meds', color: '#e6e9e9', hint: 'Heals a chunk instantly.' },
   water:     { name: 'Water', icon: 'water', color: P.waterLight, carry: 4, hint: 'Fill at the river. Puts out fire.' },
+
+  // --- what the named places give up, and only they ------------------------
+  // Every one of these comes from somewhere specific, which is the point: a
+  // recipe that needs resin is a recipe that sends you to the grove.
+  reeds:     { name: 'Reeds', icon: 'reeds', color: '#96a45c', hint: 'Cut at springs and slow water.' },
+  clay:      { name: 'Clay', icon: 'clay', color: '#a87458', hint: 'Dug from wet banks. Springs and dams.' },
+  resin:     { name: 'Resin', icon: 'resin', color: '#e8b455', hint: 'Bled from old conifers in the groves.' },
+  hardwood:  { name: 'Hardwood', icon: 'hardwood', color: '#8a6238', hint: 'Seasoned trunks. Groves and beaver works.' },
+  bone:      { name: 'Bone', icon: 'bone', color: '#d8d0b8', hint: 'The boneyards. Winter leaves a lot behind.' },
+  sinew:     { name: 'Sinew', icon: 'sinew', color: '#c8b48a', hint: 'From the boneyards, and out of their pens.' },
+  feather:   { name: 'Feather', icon: 'feather', color: '#8a94a0', hint: 'Below the lookouts, where the birds sit.' },
+  wire:      { name: 'Wire', icon: 'wire', color: '#a8792a', hint: 'Stripped out of Les Nest hardware.' },
+  fuel:      { name: 'Fuel', icon: 'fuel', color: '#c8a02e', hint: 'Taken off their dumps. Burns hot and dirty.' },
+  powder:    { name: 'Coarse Powder', icon: 'powder', color: '#c8a04a', hint: 'Their blasting powder. Cruder than yours.' },
+
+  // --- things you take on a raid -------------------------------------------
+  charge:    { name: 'Satchel Charge', icon: 'gunpowder', color: P.fire2, hint: 'Set at a structure with [E]. Then move.' },
+  chargeBig: { name: 'Breaching Charge', icon: 'gunpowder', color: P.fire1, hint: 'Takes a relay mast down in one.' },
 };
 
 export const RESOURCE_ORDER = [
-  'wood', 'stone', 'iron', 'copper', 'obsidian', 'coal', 'charcoal',
-  'sulfur', 'saltpeter', 'gunpowder', 'berries', 'fiber', 'scrap', 'ammo', 'meds', 'water',
+  'wood', 'hardwood', 'stone', 'iron', 'copper', 'obsidian', 'coal', 'charcoal',
+  'sulfur', 'saltpeter', 'gunpowder', 'powder', 'berries', 'fiber', 'reeds', 'clay',
+  'resin', 'bone', 'sinew', 'feather', 'scrap', 'wire', 'fuel', 'ammo', 'meds', 'water',
+  'charge', 'chargeBig',
 ];
 
 // Resources shown in the compact HUD bar (the rest live in the crafting panel).
@@ -146,6 +166,40 @@ export const RECIPES = [
     id: 'meds', name: 'Salve x2', station: null, category: 'material',
     cost: { berries: 4, fiber: 2 }, give: { meds: 2 },
     desc: 'Juniper taught you this one.',
+  },
+
+  // --- raid kit -------------------------------------------------------------
+  // The point of all of this is the moment you are standing at the foot of a
+  // relay mast with a satchel charge and thirty seconds of nerve.
+  {
+    id: 'charge', name: 'Satchel Charge x2', station: 'workbench', category: 'raid',
+    cost: { gunpowder: 3, clay: 2, wire: 1 }, give: { charge: 2 },
+    desc: 'Set it at the foot of a structure and walk away. Fast.',
+  },
+  {
+    id: 'chargeBig', name: 'Breaching Charge', station: 'forge', category: 'raid',
+    cost: { powder: 4, fuel: 2, wire: 2, iron: 2 }, give: { chargeBig: 1 },
+    desc: 'Their own blasting powder, packed into a can. Takes a mast in one.',
+  },
+  {
+    id: 'cutters', name: 'Bolt Cutters', station: 'forge', category: 'raid',
+    cost: { iron: 4, hardwood: 2, sinew: 2 }, give: { tool: 'cutters' },
+    desc: 'Opens a cage in one bite. The pens are full of them.',
+  },
+  {
+    id: 'smoke', name: 'Smoke Pot x3', station: 'workbench', category: 'raid',
+    cost: { resin: 2, charcoal: 2, reeds: 2 }, give: { smokeBombs: 3 },
+    desc: 'Resin and damp reeds. They cannot shoot what they cannot see.',
+  },
+  {
+    id: 'salveBig', name: 'Field Dressing x3', station: 'workbench', category: 'material',
+    cost: { berries: 4, sinew: 2, reeds: 3 }, give: { meds: 3 },
+    desc: 'Doc Quill wrote it down for you. Mostly legible.',
+  },
+  {
+    id: 'boneArrow', name: 'Bone Shot x24', station: 'workbench', category: 'material',
+    cost: { bone: 3, gunpowder: 2 }, give: { ammo: 24 },
+    desc: 'Splintered bone over a light charge. Cheap, and it hurts.',
   },
   {
     id: 'scatter', name: 'Scattergun', station: 'forge', category: 'weapon',

@@ -94,6 +94,68 @@ const ICONS = {
     ell(c, 5.5, 4.5, 2.6, 1, P.waterFoam);
     rect(c, 2, 2.4, 7, 1, P.nestSteel);
   },
+
+  // --- what the named places give up ---------------------------------------
+  reeds: (c) => {
+    for (let i = 0; i < 5; i++) {
+      const x = 2 + i * 1.7;
+      rect(c, x, 2 + (i % 2), 1, 8 - (i % 2), i % 2 ? '#7a8a4a' : '#96a45c');
+    }
+    ell(c, 3.5, 2.5, 0.9, 1.6, '#6b5a2e');
+    ell(c, 7, 3.2, 0.9, 1.6, '#6b5a2e');
+  },
+  clay: (c) => {
+    ellShaded(c, 5.5, 6.5, 4.2, 3.2, '#8a5a42', '#a87458', '#5c3a2a');
+    px(c, 4, 5, '#b98a6a'); px(c, 7, 6, '#b98a6a');
+  },
+  resin: (c) => {
+    ell(c, 5.5, 6, 3.2, 3.6, '#c88a2a');
+    ell(c, 4.8, 5, 1.6, 1.8, '#e8b455');
+    px(c, 4, 4, '#f4d68a');
+  },
+  hardwood: (c) => {
+    rect(c, 1, 3, 9, 5, '#6b4a2a');
+    rect(c, 1, 3, 9, 1, '#8a6238');
+    rect(c, 1, 5, 9, 1, '#4d331c');
+    ell(c, 1.5, 5.5, 1.6, 2.4, '#8a6238');
+  },
+  bone: (c) => {
+    rect(c, 2, 5, 7, 2, '#d8d0b8');
+    circ(c, 2.2, 4.4, 1.3, '#e6e0c8'); circ(c, 2.2, 7.4, 1.3, '#e6e0c8');
+    circ(c, 8.6, 4.6, 1.2, '#e6e0c8'); circ(c, 8.6, 7.2, 1.2, '#e6e0c8');
+    rect(c, 4, 6, 4, 1, '#b2a98e');
+  },
+  sinew: (c) => {
+    for (let i = 0; i < 3; i++) {
+      line(c, 1.5, 3 + i * 2, 9, 4 + i * 2, i % 2 ? '#c8b48a' : '#ab9670');
+    }
+    ell(c, 5.5, 5.5, 2, 3.4, 'rgba(0,0,0,0)');
+    px(c, 2, 3, '#e0d0aa'); px(c, 9, 8, '#e0d0aa');
+  },
+  feather: (c) => {
+    line(c, 2, 9, 8, 2, '#5a5448');
+    for (let i = 0; i < 6; i++) {
+      const t = i / 6;
+      const x = 2 + t * 6, y = 9 - t * 7;
+      line(c, x, y, x + 2.2 - t, y - 0.6, i % 2 ? '#8a94a0' : '#6b7480');
+    }
+    px(c, 8, 2, '#b0b8c2');
+  },
+  wire: (c) => {
+    for (let i = 0; i < 4; i++) circ(c, 5.5, 6, 4 - i, i % 2 ? '#a8792a' : '#7a5a20');
+    px(c, 9, 3, '#c8a04a');
+  },
+  fuel: (c) => {
+    rect(c, 2, 2, 7, 8, '#8a6c18');
+    rect(c, 3, 2, 2, 8, '#c8a02e');
+    rect(c, 2, 4, 7, 1, '#5c4a12');
+    rect(c, 2, 7, 7, 1, '#5c4a12');
+    px(c, 8, 3, '#7a4526');
+  },
+  powder: (c) => {
+    ell(c, 5.5, 7, 4, 2.8, '#3a3630');
+    speckle(c, 2, 5, 8, 4, '#c8a04a', 0.35, 7);
+  },
 };
 export const ICON_NAMES = Object.keys(ICONS);
 

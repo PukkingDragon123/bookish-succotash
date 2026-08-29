@@ -83,6 +83,8 @@ export class Outpost {
     this.alerted = false;
     this.alarmT = 0;
     this.rebuildT = 0;
+    this.pensOpen = false;
+    this.alliesCalled = false;
   }
 
   get pressure() { return this.razed ? 0 : this.def.pressure; }
@@ -109,12 +111,14 @@ export class Outpost {
     this.alarmT = 3;
     audio.play('alarm', { vol: 0.5 });
     game.toast(this.name.toUpperCase() + ' — ALARM', P.uiBad);
+    // Whoever has sworn to you hears it too.
+    if (game.summonAllies) game.summonAllies(this);
   }
 
   raze(game) {
     this.razed = true;
     this.hp = 0;
-    audio.play('boom', { vol: 0.9 });
+    audio.play('bigexplode', { vol: 0.9 });
     game.r.camera.addShake(9);
     for (let i = 0; i < 60; i++) {
       particles.spawn({

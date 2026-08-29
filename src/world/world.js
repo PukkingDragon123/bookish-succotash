@@ -36,6 +36,16 @@ export const NODE_DEFS = {
   huckleberry: { art: 'plant', kind: 'huckleberry', hp: 1, tool: 'hand', yields: [['berries', 2]], flammable: true, r: 6, respawn: 40 },
   serviceberry:{ art: 'plant', kind: 'serviceberry', hp: 1, tool: 'hand', yields: [['berries', 2]], flammable: true, r: 6, respawn: 40 },
   sagebush:    { art: 'plant', kind: 'sage', hp: 1, tool: 'hand', yields: [['fiber', 2]], flammable: true, r: 6, respawn: 30 },
+
+  // --- what grows only at a named place ------------------------------------
+  // These are seeded around landmarks, so a recipe that wants resin is a
+  // recipe that sends you to a grove and back.
+  reedbed:     { art: 'plant', kind: 'reeds', hp: 1, tool: 'hand', yields: [['reeds', 3]], flammable: true, r: 7, respawn: 45 },
+  claybank:    { art: 'rock', kind: 'clay', hp: 3, tool: 'hand', yields: [['clay', 3]], r: 8, respawn: 60 },
+  resinseep:   { art: 'plant', kind: 'resin', hp: 2, tool: 'hand', yields: [['resin', 2]], flammable: true, r: 6, respawn: 70 },
+  oldpine:     { art: 'tree', kind: 'pineTall', hp: 12, tool: 'axe', yields: [['hardwood', 3], ['wood', 2]], flammable: true, r: 8, tall: true },
+  bonepile:    { art: 'rock', kind: 'bones', hp: 3, tool: 'hand', yields: [['bone', 3], ['sinew', 1]], r: 8, respawn: 80 },
+  featherfall: { art: 'plant', kind: 'feathers', hp: 1, tool: 'hand', yields: [['feather', 2]], r: 6, respawn: 50 },
 };
 
 let nextNodeId = 1;
@@ -202,6 +212,7 @@ export class World {
     // Named places, once the ground exists and the camp has a home — they are
     // sited off the terrain and spaced away from both.
     this.landmarks = placeLandmarks(this, rng, { count: this.landmarkCount || 15 });
+    this.dressLandmarks(rng);
     this.rebuildGrid();
   }
 
@@ -295,6 +306,52 @@ export class World {
         }
         if (kind) this.decor.push({ x, y, kind, variant: Math.floor(hash2(tx, ty, 63) * 4), type: 'decor' });
         if (!kind && r > 0.9955) this.props.push({ x, y, kind: 'bones', variant: Math.floor(hash2(tx, ty, 64) * 3), type: 'prop' });
+      }
+    }
+  }
+
+  /**
+   * Put something at each named place that is only there.
+   *
+   * This is what turns a label into a reason. A grove has resin seeps and old
+   * pines nobody has cut; a boneyard has winterkill piled where the drifts
+   * left it. The yields are deliberately narrow — you cannot get hardwood
+   * anywhere else, so the recipe that needs it is a recipe that sends you out.
+   */
+  dressLandmarks(rng) {
+    const DRESS = {
+      spring:   [['reedbed', 9], ['claybank', 4], ['huckleberry', 4]],
+      dam:      [['reedbed', 7], ['claybank', 5], ['oldpine', 3]],
+      grove:    [['oldpine', 7], ['resinseep', 6], ['huckleberry', 5], ['serviceberry', 4]],
+      boneyard: [['bonepile', 8], ['sagebush', 6]],
+      lookout:  [['featherfall', 7], ['stoneBig', 4], ['iron', 3]],
+      talus:    [['obsidian', 5], ['iron', 5], ['stoneBig', 6], ['coal', 3]],
+      hotspring:[['sulfur', 7], ['saltpeter', 6], ['claybank', 3]],
+      hoodoo:   [['saltpeter', 6], ['obsidian', 4], ['stoneBig', 5]],
+      burn:     [['burnt', 9], ['snag', 5], ['resinseep', 3]],
+      cache:    [['stoneBig', 4], ['sagebush', 4]],
+    };
+    for (const l of this.landmarks) {
+      const spread = DRESS[l.kind];
+      if (!spread) continue;
+      for (const [type, count] of spread) {
+        let placed = 0;
+        // A spring is surrounded by water and a talus by rock, so a single
+        // blind throw lands in the drink most of the time. Keep trying.
+        for (let attempt = 0; attempt < count * 8 && placed < count; attempt++) {
+          const a = rng() * TAU;
+          const rr = (2 + rng() * 7) * TS;
+          const x = l.x + Math.cos(a) * rr, y = l.y + Math.sin(a) * rr * 0.8;
+          const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
+          if (!this.inBounds(tx, ty)) continue;
+          const id = this.tileAt(tx, ty);
+          if (isWater(id) || isSolid(id)) continue;
+          if (this.addNode(type, x, y)) placed++;
+        }
+      }
+      // A cache: one crate of something worth the walk, taken once.
+      if (l.def.yields && l.def.yields.length) {
+        l.cache = { items: l.def.yields.slice(), taken: false, x: l.x, y: l.y + 10 };
       }
     }
   }
