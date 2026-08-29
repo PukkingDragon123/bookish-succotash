@@ -623,7 +623,7 @@ def('fox', {
 def('bison', {
   w: 62, h: 55, stride: 3, grazeDrop: 5,
   pal: { out: '#221710', outFar: '#180f0a', far: '#2e2015', sep: '#2a1c12',
-         dark: '#33241a', mid: '#523c28', mid2: '#412f20', light: '#705338', eye: '#0c0a08', horn: '#a3906f', hoof: '#181310', cape: '#2b1e14' },
+         dark: '#33241a', mid: '#523c28', mid2: '#412f20', light: '#705338', eye: '#0c0a08', horn: '#b0a084', hoof: '#181310', cape: '#3a2a1c' },
   layers: [
     // Short legs. A bison stands about as high at the hump as it is long, and
     // almost all of that is body — put it on deer legs and it turns into a cow.
@@ -648,10 +648,10 @@ def('bison', {
   ],
   feats: [
     // the horn: short, black at the base, hooking up and forward
-    { set: 'head', f: ['A', 47.5, 30.5, 2.6, 1.4, -0.5, 1.1, 0.7, 'horn'] },
+    { set: 'head', f: ['A', 45.6, 28.8, 3.0, 0.9, -0.9, 1.0, 0.6, 'horn'] },
     { set: 'head', f: ['p', 47.4, 32.4, 'eye'] },
     { set: 'head', f: ['e', 56.2, 36.3, 1.3, 1.2, 'out'] },
-    { set: 'head', f: ['e', 43, 29, 4.4, 3.4, 'cape'] },           // dark woolly cap
+    { set: 'head', f: ['e', 42.5, 29.5, 4.0, 3.0, 'cape'] },       // dark woolly cap
     { set: 'body', f: ['c', 26, 14.0, 38, 15.5, 1.6, 'light'] },   // lit crest of the hump
     { set: 'l1', f: ['r', 38, 52, 4, 2, 'hoof'] },
     { set: 'l2', f: ['r', 16, 52, 4, 2, 'hoof'] },
