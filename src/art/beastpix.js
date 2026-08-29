@@ -500,13 +500,13 @@ function birdLeg(x, top, bot, r) {
 }
 
 const SPECS = {};
-const def = (key, spec) => { SPECS[key] = spec; return spec; };
+const defBeast = (key, spec) => { SPECS[key] = spec; return spec; };
 
 // ---------------------------------------------------------------------------
 //  canids — the shape everything else is measured against
 // ---------------------------------------------------------------------------
 
-def('wolf', {
+defBeast('wolf', {
   w: 49, h: 35, stride: 3, grazeDrop: 7,
   pal: { out: '#221f1b', outFar: '#1a1714', far: '#332f29', sep: '#2b2823',
          dark: '#443f36', mid: '#6b6453', light: '#918872', belly: '#7d7565', eye: '#0c0a08', nose: '#141110' },
@@ -538,7 +538,7 @@ def('wolf', {
   ],
 });
 
-def('coyote', {
+defBeast('coyote', {
   w: 42, h: 31, stride: 3, grazeDrop: 6,
   pal: { out: '#33261a', outFar: '#261c13', far: '#4a3826', sep: '#3d2e1f',
          dark: '#5c4630', mid: '#886a46', light: '#a98a5e', belly: '#a58a62', eye: '#0c0a08', nose: '#141110' },
@@ -570,7 +570,7 @@ def('coyote', {
   ],
 });
 
-def('fox', {
+defBeast('fox', {
   w: 40, h: 28, stride: 3, grazeDrop: 5,
   pal: { out: '#5c2711', outFar: '#40190c', far: '#7d3413', sep: '#6b2c12',
          dark: '#93411a', mid: '#c25f24', light: '#e5843a', belly: '#d9c9a8', eye: '#0c0a08', nose: '#141110', sock: '#241a15' },
@@ -620,7 +620,7 @@ def('fox', {
 //  has no hump at all and its rump is its highest point.
 // ---------------------------------------------------------------------------
 
-def('bison', {
+defBeast('bison', {
   w: 62, h: 55, stride: 3, grazeDrop: 5,
   pal: { out: '#221710', outFar: '#180f0a', far: '#2e2015', sep: '#2a1c12',
          dark: '#33241a', mid: '#523c28', mid2: '#412f20', light: '#705338', eye: '#0c0a08', horn: '#b0a084', hoof: '#181310', cape: '#3a2a1c' },
@@ -658,7 +658,7 @@ def('bison', {
   ],
 });
 
-def('moose', {
+defBeast('moose', {
   w: 60, h: 68, stride: 4, grazeDrop: 6,
   pal: { out: '#1d150f', outFar: '#150f0a', far: '#281c14', dark: '#2e2118', mid: '#453224', mid2: '#382819', light: '#5d4430', eye: '#0c0a08', horn: '#8d7c5e', leg: '#7d6a52' },
   layers: [
@@ -695,7 +695,7 @@ def('moose', {
   ],
 });
 
-def('bear', {
+defBeast('bear', {
   w: 56, h: 45, stride: 3, grazeDrop: 8,
   pal: { out: '#15110e', outFar: '#0d0b09', far: '#241e19', dark: '#2b241e', mid: '#42372d', mid2: '#352c24', light: '#5c4c3d', eye: '#0c0a08', muzzle: '#8a7052' },
   layers: [
@@ -732,7 +732,7 @@ def('bear', {
 //  the hoofed
 // ---------------------------------------------------------------------------
 
-def('elk', {
+defBeast('elk', {
   w: 50, h: 57, stride: 4, grazeDrop: 8,
   pal: { out: '#2c1f12', outFar: '#1f160c', far: '#3a2a18', dark: '#4d3820', mid: '#7d5e35', mid2: '#664c2b', light: '#9d7845', eye: '#0c0a08', horn: '#a08e6a', neck: '#33230f', rump: '#cbb37e' },
   layers: [
@@ -767,7 +767,7 @@ def('elk', {
   ],
 });
 
-def('pronghorn', {
+defBeast('pronghorn', {
   w: 38, h: 38, stride: 3, grazeDrop: 8,
   pal: { out: '#43301a', outFar: '#2f2112', far: '#5a4224', dark: '#7a5a2f', mid: '#a8813f', mid2: '#8d6b34', light: '#c39a56', eye: '#0c0a08', white: '#e6dfcb', horn: '#221a14' },
   layers: [
@@ -802,7 +802,7 @@ def('pronghorn', {
   ],
 });
 
-def('bighorn', {
+defBeast('bighorn', {
   w: 42, h: 39, stride: 3, grazeDrop: 6,
   pal: { out: '#282018', outFar: '#1b160f', far: '#3a2e21', dark: '#463a2b', mid: '#63523c', mid2: '#513f2e', light: '#7e6a4e', eye: '#0c0a08', horn: '#9c8760', horn2: '#7a6746', white: '#d6cdb6' },
   layers: [
@@ -842,7 +842,7 @@ def('bighorn', {
 //  posture. A hare is two ears and a crouch; a pika is a potato with ears.
 // ---------------------------------------------------------------------------
 
-def('hare', {
+defBeast('hare', {
   w: 26, h: 24, stride: 2, grazeDrop: 4,
   pal: { out: '#3b3123', outFar: '#2a231a', far: '#4d4130', dark: '#5c4f3a', mid: '#8a7a5c', mid2: '#736548', light: '#a89873', eye: '#0c0a08', white: '#ded4bb', inner: '#8a6a5c' },
   layers: [
@@ -874,7 +874,7 @@ def('hare', {
   ],
 });
 
-def('squirrel', {
+defBeast('squirrel', {
   w: 25, h: 19, stride: 1,
   pal: { out: '#3d2313', outFar: '#2c190d', far: '#57301a', dark: '#6b3d20', mid: '#96562e', mid2: '#7e4826', light: '#b06d3d', eye: '#0c0a08', white: '#e0d2ba' },
   layers: [
@@ -905,7 +905,7 @@ def('squirrel', {
   ],
 });
 
-def('hedgehog', {
+defBeast('hedgehog', {
   w: 24, h: 19, stride: 1,
   pal: { out: '#2a231c', outFar: '#1d1813', far: '#3b3229', dark: '#43392c', mid: '#5f5443', mid2: '#4e4436', light: '#7d7059', eye: '#0c0a08', face: '#a89075', tip: '#cbbfa0' },
   layers: [
@@ -937,7 +937,7 @@ def('hedgehog', {
   ],
 });
 
-def('marmot', {
+defBeast('marmot', {
   w: 31, h: 23, stride: 2,
   pal: { out: '#31241a', outFar: '#231a12', far: '#43331f', dark: '#513e28', mid: '#7a6140', mid2: '#645033', light: '#9a7d55', eye: '#0c0a08', face: '#413020' },
   layers: [
@@ -963,7 +963,7 @@ def('marmot', {
   ],
 });
 
-def('pika', {
+defBeast('pika', {
   w: 18, h: 17, stride: 1,
   pal: { out: '#3b3226', outFar: '#2a231a', far: '#4d4231', dark: '#584c39', mid: '#7d6f55', mid2: '#685c46', light: '#9a8c6d', eye: '#0c0a08', inner: '#8a7060' },
   layers: [
@@ -994,7 +994,7 @@ def('pika', {
 //  the water-shaped
 // ---------------------------------------------------------------------------
 
-def('beaver', {
+defBeast('beaver', {
   w: 40, h: 25, stride: 2,
   pal: { out: '#2a1c13', outFar: '#1c130d', far: '#3b2819', dark: '#452f1e', mid: '#6b4a2e', mid2: '#573c26', light: '#8a6440', eye: '#0c0a08', tail: '#4d3b2c', tooth: '#dcc46e' },
   layers: [
@@ -1025,7 +1025,7 @@ def('beaver', {
   ],
 });
 
-def('otter', {
+defBeast('otter', {
   w: 40, h: 22, stride: 2,
   pal: { out: '#241c15', outFar: '#18120d', far: '#33281e', dark: '#3b2f24', mid: '#5c4b3a', mid2: '#4b3c2e', light: '#7a6650', eye: '#0c0a08', throat: '#b5a68a' },
   layers: [
@@ -1057,7 +1057,7 @@ def('otter', {
 //  the mustelids you fight beside
 // ---------------------------------------------------------------------------
 
-def('ferretWild', {
+defBeast('ferretWild', {
   w: 36, h: 24, stride: 2,
   pal: { out: '#3b2d1d', outFar: '#2a1f14', far: '#54402a', dark: '#5e4830', mid: '#8f7752', mid2: '#77613f', light: '#b8a179', eye: '#0c0a08', mask: '#2e2417', cream: '#d3c39c' },
   layers: [
@@ -1086,7 +1086,7 @@ def('ferretWild', {
   ],
 });
 
-def('kit', {
+defBeast('kit', {
   w: 24, h: 18, stride: 1,
   pal: { out: '#43331f', outFar: '#2f2416', far: '#5e4830', dark: '#75593c', mid: '#b09a72', mid2: '#96825b', light: '#dccaa2', eye: '#0c0a08', mask: '#3b2f1e', cream: '#eee2c4' },
   layers: [
@@ -1121,7 +1121,7 @@ def('kit', {
 //  line that stops a bird looking like a fish.
 // ---------------------------------------------------------------------------
 
-def('raven', {
+defBeast('raven', {
   w: 34, h: 21, stride: 1,
   pal: { out: '#090c10', outFar: '#06080b', far: '#131820', dark: '#151b24', mid: '#242e3c', mid2: '#1b2330', light: '#3d4b60', eye: '#c8b25a', sheen: '#4e6280', bill: '#0e1116' },
   layers: [
@@ -1150,7 +1150,7 @@ def('raven', {
   ],
 });
 
-def('magpie', {
+defBeast('magpie', {
   w: 29, h: 17, stride: 1,
   pal: { out: '#090c10', outFar: '#06080b', far: '#131820', dark: '#151b24', mid: '#242e3c', mid2: '#1b2330', light: '#3d4b60', eye: '#0c0a08', white: '#e2e4e0', sheen: '#2f6a5e', bill: '#0e1116' },
   layers: [
@@ -1178,7 +1178,7 @@ def('magpie', {
   ],
 });
 
-def('eagle', {
+defBeast('eagle', {
   w: 40, h: 25, stride: 1,
   pal: { out: '#150e09', outFar: '#0d0906', far: '#241a11', dark: '#2b1f15', mid: '#4a3626', mid2: '#3a2a1c', light: '#63492f', eye: '#d8c88a', white: '#e6e2d6', beak: '#dfae2c', foot: '#c8951f' },
   layers: [
@@ -1210,7 +1210,7 @@ def('eagle', {
   ],
 });
 
-def('crane', {
+defBeast('crane', {
   w: 36, h: 34, stride: 2, grazeDrop: 7,
   pal: { out: '#332f2b', outFar: '#232120', far: '#474139', dark: '#4e4840', mid: '#7d766a', mid2: '#665f55', light: '#a09889', eye: '#b8a05a', crown: '#a83226', beak: '#3e3830' },
   layers: [

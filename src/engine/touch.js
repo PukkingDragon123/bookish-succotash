@@ -24,7 +24,7 @@ const DEAD = 0.14;
  * reading it. Each of these draws into a circle of radius `r` centred on
  * (x, y), in a single colour, so the button can tint the whole icon by state.
  */
-const ICONS = {
+const BUTTON_ICONS = {
   // a paw print: move, gather, the general "do the thing" button
   interact(ctx, x, y, r, c) {
     ctx.fillStyle = c;
@@ -457,7 +457,7 @@ export class TouchControls {
 
         // the icon itself
         ctx.globalAlpha = held ? 1 : 0.9;
-        const icon = ICONS[b.action];
+        const icon = BUTTON_ICONS[b.action];
         if (icon) icon(ctx, b.x, b.y, b.r * 0.78, held ? '#0d1512' : b.tint);
         else drawText(ctx, b.label, b.x, b.y - 3, held ? '#0d1512' : b.tint, { align: 'center' });
         ctx.globalAlpha = 1;

@@ -1,3 +1,6 @@
 node_modules/
 tools/scratch/
 tools/shots/
+
+# the single-file builds are generated; run `node tools/build/bundle.mjs`
+dist/_artifact-preview.html

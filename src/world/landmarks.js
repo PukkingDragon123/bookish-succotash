@@ -102,11 +102,11 @@ export const SITE_KINDS = {
 
 export const SITE_KEYS = Object.keys(SITE_KINDS);
 
-let nextId = 1;
+let nextLandmarkId = 1;
 
 export class Landmark {
   constructor(kind, tx, ty, name) {
-    this.id = nextId++;
+    this.id = nextLandmarkId++;
     this.kind = kind;
     this.def = SITE_KINDS[kind];
     this.tx = tx; this.ty = ty;

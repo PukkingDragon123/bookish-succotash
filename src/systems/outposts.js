@@ -63,11 +63,11 @@ export const OUTPOST_KINDS = {
 
 export const OUTPOST_KEYS = Object.keys(OUTPOST_KINDS);
 
-let nextId = 1;
+let nextOutpostId = 1;
 
 export class Outpost {
   constructor(kind, x, y, landmark = null) {
-    this.id = nextId++;
+    this.id = nextOutpostId++;
     this.kind = kind;
     this.def = OUTPOST_KINDS[kind];
     this.x = x; this.y = y;

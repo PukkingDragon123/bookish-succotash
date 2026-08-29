@@ -201,7 +201,7 @@ export function logSprite(variant = 0) {
 
 // --- weapons ---------------------------------------------------------------
 // Drawn pointing right, origin at the grip (left-centre).
-const WEAPONS = {
+const WEAPON_ART = {
   popper: (c) => {
     rect(c, 0, 3, 4, 4, P.bark);          // wooden grip
     rect(c, 3, 2, 9, 3, P.nestSteelDk);   // body
@@ -258,12 +258,12 @@ const WEAPONS = {
     rect(c, 5, 6, 5, 2, P.iron);   // magazine
   },
 };
-export const WEAPON_ART_NAMES = Object.keys(WEAPONS);
+export const WEAPON_ART_NAMES = Object.keys(WEAPON_ART);
 
 export function weaponSprite(kind) {
   return getSheet(`weapon:${kind}`, () => {
     const ctx = surface(24, 10);
-    const fn = WEAPONS[kind] || WEAPONS.popper;
+    const fn = WEAPON_ART[kind] || WEAPON_ART.popper;
     fn(ctx);
     outline(ctx, P.black);
     return [ctx.canvas];

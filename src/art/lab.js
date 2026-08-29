@@ -451,7 +451,7 @@ function drawSpecShelf(ctx, rng) {
   }
 }
 
-const PROPS = {
+const LAB_PROPS = {
   cage:       { w: 40, h: 40, fn: (c, r) => drawCage(c, r, 'whole') },
   cageCracked:{ w: 40, h: 40, fn: (c, r) => drawCage(c, r, 'cracked') },
   cageBroken: { w: 40, h: 40, fn: (c, r) => drawCage(c, r, 'broken') },
@@ -483,10 +483,10 @@ const PROPS = {
   mopBucket:  { w: 14, h: 16, fn: drawMopBucket },
   specShelf:  { w: 28, h: 28, fn: drawSpecShelf },
 };
-export const LAB_PROP_NAMES = Object.keys(PROPS);
+export const LAB_PROP_NAMES = Object.keys(LAB_PROPS);
 
 export function labProp(kind, variant = 0) {
-  const spec = PROPS[kind];
+  const spec = LAB_PROPS[kind];
   if (!spec) return null;
   return getSheet(`lab:${kind}:${variant}`, () => {
     const rng = makeRng(variant * 7717 + 5);

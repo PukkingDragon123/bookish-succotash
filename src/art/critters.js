@@ -222,7 +222,7 @@ export const FACE_KEYS = Object.keys(FACE);
 // Everything this rig draws is scaled up by this much. The camera pulled back
 // when the wildlife got its detail pass, and the player and the NPCs have to
 // come with it or the ferret ends up a thumbnail in its own game.
-export const DETAIL = 1.5;
+export const CRITTER_DETAIL = 1.5;
 
 // Geometry fields, as opposed to flags and colours. Only these get scaled.
 const DIMS = [
@@ -233,7 +233,7 @@ const DIMS = [
 
 function resolve(cfg) {
   const c = Object.assign({}, BASE, cfg);
-  const k = DETAIL * (cfg.scale || 1);
+  const k = CRITTER_DETAIL * (cfg.scale || 1);
   for (const d of DIMS) c[d] = (c[d] || 0) * k;
   // Eyes grow more slowly than the skull, or every face turns into a doll's.
   c.eyeR = (c.eyeR || 1) * (1 + (k - 1) * 0.5);

@@ -1,0 +1,220 @@
+<title>Ferret Fights Back</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+<style>
+  /*
+    The game commits to one visual world — a dark basin at dusk — so this page
+    commits with it rather than offering a light theme that would fight the
+    canvas sitting in the middle of it. Every colour is painted explicitly, so
+    the page holds on whichever ground the host puts behind it.
+  */
+  :root {
+    --ground: #06090a;   /* near-black, biased green rather than neutral */
+    --panel:  #0d1411;
+    --bone:   #e8d7b0;   /* her fur, and every heading on the page */
+    --moss:   #7e9280;
+    --dim:    #728570;
+    --rule:   #23342a;
+    --cyber:  #4de1ff;   /* the implant. Used twice on this page, no more. */
+    --rust:   #c0503f;   /* Les Nest. Only ever an error. */
+    --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--ground);
+    color: var(--moss);
+    font-family: var(--mono);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-sizing: border-box;
+  }
+  canvas#screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #0b1210;
+    display: block;
+    touch-action: none;
+    box-shadow: 0 0 0 1px #1d2a22, 0 12px 60px rgba(0, 0, 0, .8);
+  }
+
+  /* --- the containment record ---------------------------------------------
+     Not a centred logo and a button. This is the page from the file they kept
+     on her, which is the one thing the player is about to walk out of. */
+  #boot {
+    position: fixed; inset: 0; z-index: 10;
+    background:
+      radial-gradient(120% 90% at 22% 30%, #101a15 0%, var(--ground) 62%);
+    display: flex; align-items: center; justify-content: flex-start;
+    padding: clamp(24px, 7vw, 96px);
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
+  /* scanlines, barely there */
+  #boot::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom, rgba(255,255,255,.022) 0 1px, transparent 1px 3px);
+  }
+
+  #record {
+    position: relative; z-index: 1;
+    width: min(560px, 100%);
+    display: flex; flex-direction: column; gap: 22px;
+  }
+
+  .tag {
+    font-size: 10px; letter-spacing: .34em; text-transform: uppercase;
+    color: var(--dim);
+    display: flex; gap: 10px 18px; flex-wrap: wrap;
+  }
+  .tag span + span::before {
+    content: "\2014"; margin-right: 18px; color: var(--rule); letter-spacing: 0;
+  }
+  .tag b { color: var(--bone); font-weight: 500; letter-spacing: .34em; }
+
+  #boot h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(30px, 7.4vw, 58px);
+    line-height: .96;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    text-wrap: balance;
+    color: var(--bone);
+    margin: 0;
+  }
+  #boot h1 em {
+    font-style: normal;
+    display: block;
+    color: var(--moss);
+  }
+  .hairline { height: 1px; background: var(--rule); position: relative; }
+  .hairline::before {
+    content: ""; position: absolute; left: 0; top: 0; width: 46px; height: 1px;
+    background: var(--cyber);
+  }
+
+  .brief { margin: 0; font-size: 13px; line-height: 1.75; color: var(--moss); max-width: 52ch; }
+  .brief strong { color: var(--bone); font-weight: 500; }
+
+  #bootmsg {
+    margin: 0; font-size: 11px; line-height: 1.6; color: var(--dim);
+    letter-spacing: .04em;
+  }
+  #bootmsg::after {
+    content: "\00a0\2588";
+    color: var(--cyber);
+    animation: blink 1.1s steps(1, end) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Controls are a definition list because that is what they are: a key and
+     what it does. Two columns so the eye scans down the keys. */
+  .keys {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 7px 16px;
+    font-size: 11px;
+    align-items: baseline;
+  }
+  .keys dt { color: var(--bone); letter-spacing: .06em; font-weight: 500; }
+  .keys dd { margin: 0; color: var(--dim); letter-spacing: .02em; }
+  .keys .sep {
+    grid-column: 1 / -1; height: 1px; background: var(--rule); margin: 5px 0 3px;
+  }
+  .touch-only { display: none; }
+  @media (pointer: coarse) and (hover: none) {
+    .keys { display: none; }
+    .touch-only {
+      display: block; margin: 0; font-size: 12px; line-height: 1.7;
+      color: var(--dim); max-width: 46ch;
+      border-left: 1px solid var(--rule); padding-left: 14px;
+    }
+    .touch-only b { color: var(--bone); font-weight: 500; }
+  }
+
+  #startbtn {
+    font-family: var(--mono);
+    font-size: 12px; font-weight: 700; letter-spacing: .26em; text-transform: uppercase;
+    padding: 16px 30px; min-height: 52px;
+    align-self: flex-start;
+    cursor: pointer;
+    background: var(--panel);
+    color: var(--bone);
+    border: 1px solid var(--rule);
+    border-radius: 0;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+    touch-action: manipulation;
+  }
+  #startbtn:hover { background: #16241b; border-color: #3d5a41; }
+  #startbtn:focus-visible { outline: 2px solid var(--cyber); outline-offset: 3px; }
+
+  .err {
+    color: var(--rust); white-space: pre-wrap; font-size: 11px; line-height: 1.6;
+    margin: 0; max-width: 100%; overflow-x: auto;
+    border-left: 2px solid var(--rust); padding-left: 12px;
+  }
+  .hidden { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #bootmsg::after { animation: none; }
+    #startbtn { transition: none; }
+  }
+</style>
+
+<div id="wrap"><canvas id="screen"></canvas></div>
+
+<div id="boot">
+  <div id="record">
+    <div class="tag">
+      <span><b>Les Nest</b> Biotics</span>
+      <span>Block C &middot; Containment</span>
+      <span>Subject 41</span>
+    </div>
+
+    <h1>Ferret Fights<em>Back</em></h1>
+    <div class="hairline"></div>
+
+    <p class="brief">
+      They took her apart and put something in her head. She got out.
+      Now there is a basin full of animals who have their own reasons to
+      hate the people with the cages, and <strong>six outposts</strong>
+      calling in patrols until somebody burns them down.
+    </p>
+
+    <dl class="keys">
+      <dt>WASD</dt><dd>Move</dd>
+      <dt>Mouse</dt><dd>Aim and fire</dd>
+      <dt>X</dt><dd>Bite &mdash; she dashes in and closes her jaws</dd>
+      <dt>Space</dt><dd>Dash. Through a shot, it counts as a graze</dd>
+      <dt>E</dt><dd>Gather, talk, set a charge, open a cage</dd>
+      <div class="sep"></div>
+      <dt>Tab</dt><dd>Craft</dd>
+      <dt>M</dt><dd>Map &mdash; named places, outposts, who owes you</dd>
+      <dt>T / Y / H</dt><dd>Order, rally and hold your animals</dd>
+      <dt>G</dt><dd>Smoke pot</dd>
+    </dl>
+
+    <p class="touch-only">
+      <b>Left thumb steers, right thumb aims and fires.</b>
+      The buttons around them bite, dash, gather and craft, and they come and
+      go with whatever you are standing next to.
+    </p>
+
+    <p id="bootmsg">Generating the basin&hellip;</p>
+    <button id="startbtn" class="hidden">Enter the forest</button>
+    <p class="err hidden" id="booterr"></p>
+  </div>
+</div>

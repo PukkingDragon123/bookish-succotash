@@ -8,7 +8,7 @@ import { VIEW_W, VIEW_H } from '../engine/canvas.js';
 import { clamp } from '../engine/math.js';
 import { audio } from '../engine/audio.js';
 
-const MAX_W = 168;
+const BUBBLE_MAX_W = 168;
 
 /**
  * One speech bubble, drawn in screen space over a world position.
@@ -28,7 +28,7 @@ export function speechBubble(r, game, o) {
 
   let w = 0;
   for (const l of lines) w = Math.max(w, measure(l, 1));
-  w = Math.min(o.maxW || MAX_W, w);
+  w = Math.min(o.maxW || BUBBLE_MAX_W, w);
   const padX = 5, padY = 4;
   const bw = w + padX * 2;
 
@@ -117,7 +117,7 @@ export class Dialogue {
       npc, text,
       life: seconds, maxLife: seconds,
       chars: 0,
-      lines: wrapText(text, MAX_W),
+      lines: wrapText(text, BUBBLE_MAX_W),
       accept: !!opts.accept,
       voice: npc && npc.data ? npc.data.voice : 1,
     };
