@@ -240,8 +240,90 @@ await check('trapped animal can be carried to the den', () => {
   return { ok: carrying && g.rescued === 1 && !p.carrying, rescued: g.rescued };
 });
 
+// --- the occupation, and raiding it -----------------------------------------
+await check('the basin starts occupied and nothing comes on a clock', () => {
+  const g = window.game;
+  return {
+    ok: g.occupation.standing.length >= 4 && g.director.phase === 'prep' && !isFinite(g.director.timer),
+    standing: g.occupation.standing.length,
+    phase: g.director.phase,
+    gated: g.director.gated,
+  };
+});
+
+await check('walking up to an outpost staffs it', () => {
+  const g = window.game;
+  const o = g.occupation.standing[0];
+  g.player.x = o.x - 60; g.player.y = o.y + 40;
+  g.updateOutposts(0.02);
+  return { ok: o.spawned && o.guards.length > 0 && o.found, guards: o.guards.length, name: o.name };
+});
+
+await check('razing an outpost drops the pressure for good', () => {
+  const g = window.game;
+  const o = g.occupation.standing[0];
+  const before = g.occupation.totalPressure;
+  const standingBefore = g.occupation.standing.length;
+  o.damage(o.maxHp + 1, g);
+  return {
+    ok: o.razed && g.occupation.totalPressure < before && g.occupation.standing.length === standingBefore - 1,
+    before: Math.round(before * 10) / 10, after: Math.round(g.occupation.totalPressure * 10) / 10,
+    standing: g.occupation.standing.length,
+  };
+});
+
+await check('the raid pays in loot and in standing', () => {
+  const g = window.game;
+  const anyFaction = Object.values(g.alliances.standing).some(v => v > 0);
+  return { ok: anyFaction && g.pickups.list.length > 0, standing: g.alliances.standing, drops: g.pickups.list.length };
+});
+
+await page.waitForTimeout(900);
+await check('a raid is what moves Les Nest to the next wave', () => {
+  const g = window.game;
+  return { ok: g.director.wave >= 1, wave: g.director.wave, phase: g.director.phase };
+});
+
+await check('pressure eventually sends a patrol at the camp', () => {
+  const g = window.game;
+  const before = g.enemies.length;
+  g.occupation.heat = 0.999;
+  g.occupation.update(2, g);
+  return { ok: g.enemies.length > before && g.occupation.patrols === 1, spawned: g.enemies.length - before };
+});
+
+await check('landmarks are found by walking to them, not given', () => {
+  const g = window.game;
+  const marks = g.world.landmarks;
+  const far = marks.find(m => !m.found);
+  if (!far) return { ok: false, why: 'everything already found' };
+  g.player.x = far.x + 4000; g.player.y = far.y + 4000;
+  g.updateDiscovery(0.02);
+  const stillHidden = !far.found;
+  g.player.x = far.x + 20; g.player.y = far.y + 20;
+  g.updateDiscovery(0.02);
+  return { ok: stillHidden && far.found, name: far.name, total: marks.length };
+});
+
+await check('faction tiers unlock passives and allies', () => {
+  const g = window.game;
+  g.alliances.add('flock', 100, g, 'test');
+  return {
+    ok: g.alliances.has('scout') && !!g.alliances.alliesFrom('flock'),
+    tier: g.alliances.tierOf('flock'),
+    allies: g.alliances.alliesFrom('flock').allies,
+  };
+});
+
 // --- waves ------------------------------------------------------------------
-await page.evaluate(() => { const g = window.game; g.director.timer = 0.05; g.player.invuln = 1e6; });
+await page.evaluate(() => {
+  const g = window.game;
+  // Force the old clock back on for the set-piece tests below.
+  g.director.gated = false;
+  g.director.phase = 'prep';
+  g.director.timer = 0.05;
+  g.player.invuln = 1e6;
+});
 await page.waitForTimeout(1500);
 await check('wave starts and spawns hostiles', () => {
   const g = window.game;
@@ -259,6 +341,7 @@ await check('clearing the wave returns to prep with a countdown', () => {
 // --- the burn ---------------------------------------------------------------
 await page.evaluate(() => {
   const g = window.game;
+  g.director.gated = false;
   g.director.wave = 7;
   g.director.phase = 'prep';
   g.director.timer = 0.05;

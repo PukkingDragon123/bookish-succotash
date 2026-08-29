@@ -3,6 +3,10 @@
 // drop loot) that the entity classes call back into.
 
 import { updateWind, gustBurst } from './world/wind.js';
+import { Occupation } from './systems/outposts.js';
+import { Alliances, FACTIONS, FACTION_KEYS, factionOf } from './systems/factions.js';
+import { DISCOVER_R } from './world/landmarks.js';
+import { outpostFrames, outpostWreck, outpostSize } from './art/outpost.js';
 import { Renderer, VIEW_W, VIEW_H } from './engine/canvas.js';
 import { Input } from './engine/input.js';
 import { toggleFullscreen } from './engine/touch.js';
@@ -47,7 +51,10 @@ export const STATE = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'de
 
 // The basin. Big enough that you can get properly lost in it and the far side
 // is a journey rather than a stroll.
-export const FOREST_W = 460, FOREST_H = 380;
+// The basin. Big enough that the far corner is a decision rather than a
+// detour: at 16px tiles this is about 12,000 by 9,500 world pixels, and
+// crossing it takes long enough that you plan the trip.
+export const FOREST_W = 760, FOREST_H = 620;
 
 export class Game {
   constructor(canvas, seed) {
@@ -148,6 +155,13 @@ export class Game {
     this.npcs = spawnNPCs(this.world, this.seed);
     this.wildlife = new Wildlife(this.world, this.seed);
     this.director = new Director(this.seed);
+    // The basin is occupied. Every outpost still standing is what sends
+    // patrols at the camp, so the tempo of the game is a thing you can go and
+    // change rather than a timer you wait out.
+    this.occupation = new Occupation(this.seed);
+    this.occupation.seed(this.world);
+    this.alliances = new Alliances();
+    this.found = 0;
     this.enemies.length = 0;
     this.wrecks.length = 0;
     this.hazards.length = 0;
@@ -187,7 +201,7 @@ export class Game {
     this.buildForest();
     this.state = STATE.PLAY;
     if (skipped) {
-      this.hud.showAnnounce('DEFEND THE BASIN', 'THEY COME IN WAVES', P.ui, 4);
+      this.hud.showAnnounce('TAKE THE BASIN BACK', 'FIND THEIR OUTPOSTS. BURN THEM DOWN.', P.ui, 4.5);
     } else {
       // You arrive the way the helicopter left you.
       this.player.hp = Math.max(12, Math.round(this.player.maxHp * 0.35));
@@ -321,6 +335,11 @@ export class Game {
       for (const n of this.npcs) n.update(sdt, this);
       this.wildlife.update(sdt, this);
       this.squad.update(sdt, this);
+      if (this.occupation) {
+        this.occupation.update(sdt, this);
+        this.updateOutposts(sdt);
+      }
+      this.updateDiscovery(sdt);
     }
     this.pickups.update(sdt, this);
     this.updateFlyers(sdt);
@@ -728,6 +747,178 @@ export class Game {
   // ======================================================================
   //  SERVICES used by entities
   // ======================================================================
+  /**
+   * Naming what you walk past.
+   *
+   * A landmark is worth nothing until you know it is there, so they are found
+   * rather than given. The flock's scouting doubles the range you find them
+   * at, which is the difference between exploring and being told.
+   */
+  updateDiscovery() {
+    if (!this.world.landmarks) return;
+    const reach = DISCOVER_R * (this.alliances && this.alliances.has('scout') ? 2 : 1);
+    for (const l of this.world.landmarks) {
+      if (l.found) continue;
+      if (Math.hypot(this.player.x - l.x, this.player.y - l.y) > reach) continue;
+      l.found = true;
+      this.found++;
+      this.panels.mapDirty = true;
+      this.toast('FOUND: ' + l.name.toUpperCase(), P.uiAccent, 3);
+      audio.play('unlock', { vol: 0.35, pitch: 1.3 });
+      if (l.def.blurb) this.hud.subtitle(l.def.blurb, 3.4);
+      if (l.def.reveals) {
+        // a lookout shows you what it can see
+        for (const o of this.world.landmarks) {
+          if (o.found) continue;
+          if (Math.hypot(o.x - l.x, o.y - l.y) < l.def.reveals) { o.found = true; this.found++; }
+        }
+      }
+      if (l.faction && this.alliances) this.alliances.add(l.faction, 2, this, 'found their ground');
+    }
+    // the pack marks Les Nest for you once it runs with you
+    if (this.alliances && this.alliances.has('track') && this.occupation) {
+      for (const o of this.occupation.outposts) {
+        if (!o.found) { o.found = true; this.panels.mapDirty = true; }
+      }
+    }
+  }
+
+  /**
+   * Outposts only staff themselves when somebody is close enough to care.
+   * A basin holding forty permanently-simulated guards is a basin at 12fps.
+   */
+  updateOutposts(dt) {
+    for (const o of this.occupation.outposts) {
+      if (o.razed) continue;
+      const near = o.inRange(this.player.x, this.player.y, 300);
+      if (near && !o.found) {
+        o.found = true;
+        this.panels.mapDirty = true;
+        this.toast('LES NEST — ' + o.def.label.toUpperCase(), P.uiBad, 3);
+        this.hud.subtitle(o.def.desc, 3.4);
+      }
+      if (near && !o.spawned) {
+        o.spawned = true;
+        for (const [kind, n] of o.def.garrison) {
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * TAU + o.id;
+            const e = this.spawnEnemy(kind, o.x + Math.cos(a) * rnd(30, o.r),
+                                            o.y + Math.sin(a) * rnd(24, o.r * 0.8), 1);
+            if (e) { e.homeX = o.x; e.homeY = o.y; e.garrisonOf = o; o.guards.push(e); }
+          }
+        }
+      }
+      if (!near && o.spawned && !o.alerted) {
+        // walked away without a fight: they stand down and the pens refill
+        o.spawned = false;
+        for (const g of o.guards) if (!g.dead) g.dead = true;
+        o.guards.length = 0;
+      }
+      o.alarmT = Math.max(0, o.alarmT - dt);
+      o.guards = o.guards.filter(g => !g.dead);
+    }
+  }
+
+  /** The nearest outpost you are standing inside, for prompts and the HUD. */
+  outpostAt(x, y) {
+    if (!this.occupation) return null;
+    for (const o of this.occupation.outposts) {
+      if (o.razed) continue;
+      if (Math.hypot(x - o.x, y - o.y) < 34) return o;
+    }
+    return null;
+  }
+
+  /**
+   * A patrol. This is what standing outposts eventually buy you, and it is
+   * deliberately much rarer than the old forty-five-second wave clock.
+   */
+  sendPatrol(size, index) {
+    const world = this.world;
+    const a = Math.random() * TAU;
+    const px = clamp(this.camp.x + Math.cos(a) * 420, 40, world.pxW - 40);
+    const py = clamp(this.camp.y + Math.sin(a) * 420, 40, world.pxH - 40);
+    const pool = index < 3 ? ['poacher', 'poacher', 'drone']
+      : index < 6 ? ['poacher', 'drone', 'trapper', 'logger']
+      : ['trapper', 'spider', 'enforcer', 'drone', 'turret'];
+    for (let i = 0; i < size; i++) {
+      this.spawnEnemy(pick(pool), px + rnd(-40, 40), py + rnd(-40, 40), 1 + Math.floor(index / 3));
+    }
+    this.announce('PATROL INBOUND', 'THE MASTS CALLED THEM', P.uiBad, 3.2);
+    audio.play('alarm', { vol: 0.55 });
+    this.hud.ping(px, py, P.uiBad, 8);
+  }
+
+  /**
+   * An outpost goes down. This is the good moment in the loop, so it pays in
+   * everything at once: materials, standing with whoever's ground it was on,
+   * and permanently less pressure for the rest of the run.
+   */
+  onOutpostRazed(o) {
+    this.announce(o.name.toUpperCase() + ' RAZED', 'THE BASIN GETS QUIETER', P.uiGood, 4);
+    for (const [item, n] of Object.entries(o.def.loot || {})) {
+      this.dropPickup(item, n, o.x + rnd(-16, 16), o.y + rnd(-8, 14));
+    }
+    for (const g of o.guards) if (!g.dead) g.damage(9999, this, {});
+    o.guards.length = 0;
+    this.occupation.razed++;
+
+    const fac = o.landmark && o.landmark.faction;
+    if (fac) this.alliances.add(fac, 13, this, 'took their ground back');
+    // everybody notices a mast come down
+    for (const k of FACTION_KEYS) if (k !== fac) this.alliances.add(k, 4, this, 'word travels');
+
+    if (o.def.frees) {
+      // the pens open. Whatever was in them is grateful, and remembers.
+      for (let i = 0; i < o.def.frees; i++) {
+        const a = this.wildlife.spawnFreed
+          ? this.wildlife.spawnFreed(o.x + rnd(-24, 24), o.y + rnd(-16, 16), this)
+          : null;
+        if (a) {
+          a.addTrust(30, this, 'freed');
+          const f = factionOf(a.key);
+          if (f) this.alliances.add(f, 2, this, 'freed one of theirs');
+        }
+      }
+    }
+    if (this.occupation.standing.length === 0) {
+      this.announce('THE BASIN IS CLEAR', 'NOTHING LEFT TO CALL THEM IN', P.uiGood, 6);
+    }
+  }
+
+  /**
+   * One of their structures, standing or wrecked.
+   *
+   * A standing outpost carries its own health bar and a name plate once you
+   * have found it, because the interesting question at four hundred pixels is
+   * always "can I take that with what I am carrying".
+   */
+  drawOutpost(r, o) {
+    if (o.razed) {
+      const img = outpostWreck(o.def.core);
+      r.shadow(o.x, o.y, 16, 6, 0.3);
+      r.draw(img, o.x - img.width / 2, o.y - img.height + 3);
+      return;
+    }
+    const f = outpostFrames(o.def.core);
+    const img = f[Math.floor(this.time * 5) % f.length];
+    r.shadow(o.x, o.y, 15, 6, 0.34);
+    r.draw(img, o.x - img.width / 2, o.y - img.height + 3);
+
+    const top = o.y - img.height;
+    if (o.hp < o.maxHp) {
+      const w = 30;
+      r.rect(o.x - w / 2, top - 6, w, 3, 'rgba(0,0,0,0.6)');
+      r.rect(o.x - w / 2, top - 6, Math.round(w * (o.hp / o.maxHp)), 3, P.uiBad);
+    }
+    if (o.alarmT > 0) {
+      r.ring(o.x, o.y - 6, 20 + (3 - o.alarmT) * 26, P.uiBad, 1, o.alarmT / 3);
+    }
+  }
+
+  /** A big centred banner, for a faction tier or another once-a-run moment. */
+  bigToast(title, sub, color) { this.announce(title, sub, color || P.favor, 4.5); }
+
   toast(text, color, seconds) { this.hud.toast(text, color, seconds); }
   announce(title, sub, color, seconds) { this.hud.showAnnounce(title, sub, color, seconds); }
   weaponName(key) { return WEAPONS[key] ? WEAPONS[key].name : key; }
@@ -983,6 +1174,19 @@ export class Game {
       }
       b.alive = false;
       return 'consumed';
+    }
+    // Their structures take hits like anything else. This is the whole raid:
+    // walk in, shoot the mast down, walk out with the loot.
+    if (this.occupation && b.owner === this.player) {
+      for (const o of this.occupation.outposts) {
+        if (o.razed) continue;
+        const rr = 20 + b.radius;
+        if (dist2(b.x, b.y, o.x, o.y - 10) > rr * rr) continue;
+        o.damage(b.damage, this);
+        particles.text(o.x + rnd(-6, 6), o.y - 26, String(Math.round(b.damage)), P.uiWarn, { life: 0.5, scale: 1 });
+        b.alive = false;
+        return 'consumed';
+      }
     }
     // friendly fire can also break saw traps and enemy hardware
     for (const h of this.hazards) {
@@ -1396,11 +1600,17 @@ export class Game {
     for (const w of this.wrecks) if (cam.visible(w.x, w.y, 40)) list.push(w);
     for (const n of this.npcs) if (cam.visible(n.x, n.y, 40)) list.push(n);
     for (const h of this.hazards) if (h.layer === 'entity' && cam.visible(h.x, h.y, 40)) list.push(h);
+    if (this.occupation) {
+      for (const o of this.occupation.outposts) {
+        if (cam.visible(o.x, o.y, 90)) list.push({ y: o.y, outpost: o });
+      }
+    }
     if (!this.player.dead || this.player.deathT < 1.2) list.push(this.player);
 
     list.sort((a, b) => (a.y || 0) - (b.y || 0));
     for (const o of list) {
       if (o === this.player) { this.player.draw(r, this); continue; }
+      if (o.outpost) { this.drawOutpost(r, o.outpost); continue; }
       if (o.draw) { o.draw(r, this); continue; }
       this.drawWorldObject(r, o);
     }

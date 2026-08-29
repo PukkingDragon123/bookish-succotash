@@ -102,6 +102,7 @@ function drawAspen(ctx, rng, sway) {
   const trunkH = Math.round(H * 0.62);
   const lean = (rng() - 0.5) * 3;
   taper(ctx, cx, base, cx + lean + sway * 0.5, base - trunkH, 2.2, 1.4, P.aspenBark);
+  rect(ctx, cx - 2, base - trunkH + 2, 1, trunkH - 3, shade(P.aspenBark, -0.18));
   // the black "eyes" on aspen bark
   for (let i = 0; i < 5; i++) {
     const y = base - 4 - rng() * (trunkH - 6);
@@ -109,19 +110,29 @@ function drawAspen(ctx, rng, sway) {
     rect(ctx, x, y, 2, 1, P.aspenMark);
     px(ctx, x - 1, y, P.aspenMark);
   }
-  // shivering canopy
+  // The crown. Aspen leaves are small and round and they hang in a loose,
+  // ragged cloud — the old version drew one big filled disc with a highlight
+  // on it, which is why a hillside of them looked like a row of lollipops.
   const topX = cx + lean + sway * 2.2;
-  const topY = base - trunkH - 2;
-  const clusters = 9;
-  for (let i = 0; i < clusters; i++) {
-    const a = (i / clusters) * TAU + rng() * 0.3;
-    const rr = 5 + rng() * 4;
-    const bx = topX + Math.cos(a) * rr + sway * 0.8;
-    const by = topY + Math.sin(a) * rr * 0.7;
-    ell(ctx, bx, by, 3.6, 3, i % 3 === 0 ? P.aspenLeafHi : P.aspenLeaf);
+  const topY = base - trunkH - 1;
+  const leaves = 26;
+  for (let i = 0; i < leaves; i++) {
+    const a = rng() * TAU;
+    const rr = Math.sqrt(rng()) * 7.2;
+    const bx = topX + Math.cos(a) * rr + sway * (0.4 + rr * 0.09);
+    const by = topY + Math.sin(a) * rr * 0.78 - 1;
+    // lit on top, shadowed underneath, and a few dead leaves gone to rust
+    const up = (by - topY) < -1;
+    const col = rng() < 0.10 ? P.aspenRust
+      : up ? P.aspenLeafHi
+      : (by - topY) > 2.5 ? shade(P.aspenLeaf, -0.24) : P.aspenLeaf;
+    ell(ctx, bx, by, 1.9 + rng() * 0.8, 1.5 + rng() * 0.6, col);
   }
-  ell(ctx, topX, topY, 5.5, 4.4, P.aspenLeaf);
-  ell(ctx, topX - 1, topY - 1.5, 3.4, 2.6, P.aspenLeafHi);
+  // a couple of gaps punched back through, so the crown has sky in it
+  for (let i = 0; i < 3; i++) {
+    const a = rng() * TAU, rr = 2 + rng() * 4;
+    ctx.clearRect(Math.round(topX + Math.cos(a) * rr), Math.round(topY + Math.sin(a) * rr * 0.7), 2, 1);
+  }
 }
 
 function drawSnag(ctx, rng, sway) {

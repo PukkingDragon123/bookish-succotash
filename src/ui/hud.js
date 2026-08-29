@@ -20,6 +20,8 @@ function timeStr(s) {
 
 export class Hud {
   constructor() {
+    this.sub = null;
+    this.pings = [];
     this.toasts = [];
     this.announce = null;
     this.hintT = 0;
@@ -31,11 +33,25 @@ export class Hud {
     if (this.toasts.length > 5) this.toasts.shift();
   }
 
+  /** A quiet line under the banner: flavour, not instruction. */
+  subtitle(text, seconds = 3) { this.sub = { text, t: seconds, total: seconds }; }
+
+  /** A marker out in the world, for something that just happened off-screen. */
+  ping(x, y, color, seconds = 6) {
+    this.pings.push({ x, y, color, t: seconds, total: seconds });
+    if (this.pings.length > 8) this.pings.shift();
+  }
+
   showAnnounce(title, sub, color, seconds) {
     this.announce = { title, sub, color, life: seconds, maxLife: seconds };
   }
 
   update(dt) {
+    if (this.sub) { this.sub.t -= dt; if (this.sub.t <= 0) this.sub = null; }
+    for (let i = this.pings.length - 1; i >= 0; i--) {
+      this.pings[i].t -= dt;
+      if (this.pings[i].t <= 0) this.pings.splice(i, 1);
+    }
     for (let i = this.toasts.length - 1; i >= 0; i--) {
       this.toasts[i].life -= dt;
       if (this.toasts[i].life <= 0) this.toasts.splice(i, 1);
@@ -68,6 +84,7 @@ export class Hud {
       return;
     }
 
+    this.drawSubtitle(r, ctx, game);
     this.drawVitals(r, ctx, p, game);
     this.drawWood(r, ctx, p, game);
     this.drawResources(r, ctx, p, game);
@@ -212,6 +229,12 @@ export class Hud {
   // --- the countdown --------------------------------------------------------
   drawWaveBanner(r, ctx, game) {
     const d = game.director;
+    // Outposts are the tempo now; the wave clock only shows for the scripted
+    // set pieces, so the top of the screen is not two competing countdowns.
+    if (game.occupation && game.occupation.outposts.length && !d.isBossWave && d.phase !== PHASE.ASSAULT) {
+      this.drawOccupation(r, ctx, game);
+      return;
+    }
     const cx = VIEW_W / 2;
     // The director is on hold until the first fight is over; showing a wave
     // countdown that is not running would just be a lie.
@@ -305,6 +328,57 @@ export class Hud {
       ctx.globalAlpha = 1;
       y -= 13;
     }
+  }
+
+  /** A quiet line under the banner, and markers for off-screen events. */
+  drawSubtitle(r, ctx, game) {
+    if (this.sub) {
+      const a = clamp(this.sub.t / 0.6, 0, 1);
+      ctx.globalAlpha = a;
+      drawText(ctx, this.sub.text, VIEW_W / 2, VIEW_H - 62, P.uiDim, { align: 'center', shadow: '#000' });
+      ctx.globalAlpha = 1;
+    }
+    // Pings sit on the rim of the screen pointing at where the thing happened,
+    // so a patrol landing off-camera still tells you which way to look.
+    for (const p of this.pings) {
+      const sx = p.x - r.camera.ox, sy = p.y - r.camera.oy;
+      const a = clamp(p.t / p.total, 0, 1) * (0.5 + Math.abs(Math.sin(game.time * 4)) * 0.5);
+      const cx = clamp(sx, 10, VIEW_W - 10), cy = clamp(sy, 22, VIEW_H - 24);
+      ctx.globalAlpha = a;
+      r.uiRect(cx - 2, cy - 2, 5, 5, p.color);
+      r.uiRect(cx - 4, cy, 1, 1, p.color);
+      r.uiRect(cx + 4, cy, 1, 1, p.color);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /**
+   * The occupation readout.
+   *
+   * This replaces the wave clock as the thing you glance at. It says how many
+   * of their outposts are still up and how close the noise is to buying them
+   * a patrol — both of which are numbers you can go and change.
+   */
+  drawOccupation(r, ctx, game) {
+    const occ = game.occupation;
+    if (!occ || !occ.outposts.length) return;
+    const standing = occ.standing.length;
+    const cx = VIEW_W / 2;
+    const w = 132, h = standing ? 20 : 12;
+    const y = 2;
+    r.uiRect(cx - w / 2, y, w, h, 'rgba(9,16,13,0.82)');
+    r.uiStroke(cx - w / 2, y, w, h, standing ? 'rgba(120,54,44,0.7)' : 'rgba(70,110,72,0.7)');
+    if (!standing) {
+      drawText(ctx, 'BASIN CLEAR', cx, y + 3, P.uiGood, { align: 'center' });
+      return;
+    }
+    drawText(ctx, 'LES NEST: ' + standing + ' HOLDING', cx, y + 3, P.uiBad, { align: 'center' });
+    // the heat bar: full means a patrol leaves for your camp
+    const bw = w - 12;
+    r.uiRect(cx - bw / 2, y + 12, bw, 4, 'rgba(0,0,0,0.55)');
+    const f = clamp(occ.heat, 0, 1);
+    r.uiRect(cx - bw / 2, y + 12, Math.round(bw * f), 4, f > 0.8 ? P.uiBad : f > 0.5 ? P.uiWarn : '#6a5a3a');
+    r.uiStroke(cx - bw / 2, y + 12, bw, 4, 'rgba(61,90,65,0.5)');
   }
 
   drawAnnounce(r, ctx, game) {

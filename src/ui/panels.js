@@ -3,6 +3,7 @@
 // this pause the world?" question has a single answer (it doesn't — waves keep
 // counting down while you shop).
 
+import { FACTIONS, FACTION_KEYS } from '../systems/factions.js';
 import { drawText, measure } from '../engine/font.js';
 import { itemIcon } from '../art/items.js';
 import { P } from '../art/palette.js';
@@ -222,7 +223,11 @@ export class Panels {
   // --- the basin map --------------------------------------------------------
   buildMap(game) {
     const world = game.world;
-    const scale = 3;                                  // tiles per map pixel
+    // Tiles per map pixel, chosen so the finished map fills the panel rather
+    // than sitting as a postage stamp in the middle of it. A bigger basin
+    // needs a coarser map, not a smaller one.
+    const availW = VIEW_W - 36, availH = VIEW_H - 86;
+    const scale = Math.max(1, Math.ceil(Math.max(world.w / availW, world.h / availH)));
     const mw = Math.ceil(world.w / scale), mh = Math.ceil(world.h / scale);
     const { canvas, ctx } = makeCanvas(mw, mh);
     const img = ctx.createImageData(mw, mh);
@@ -251,10 +256,10 @@ export class Panels {
     drawText(ctx, 'M TO CLOSE', px + pw - 6, py + 5, P.uiDim, { align: 'right' });
 
     const mw = this.mapCanvas.width, mh = this.mapCanvas.height;
-    const avail = { w: pw - 12, h: ph - 24 };
-    const s = Math.max(1, Math.floor(Math.min(avail.w / mw, avail.h / mh)));
-    const dw = mw * s, dh = mh * s;
-    const dx = Math.round(px + (pw - dw) / 2), dy = Math.round(py + 14 + (avail.h - dh) / 2);
+    const avail = { w: pw - 12, h: ph - 58 };
+    const s = Math.min(avail.w / mw, avail.h / mh);
+    const dw = Math.round(mw * s), dh = Math.round(mh * s);
+    const dx = Math.round(px + (pw - dw) / 2), dy = Math.round(py + 14);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.mapCanvas, dx, dy, dw, dh);
     r.uiStroke(dx - 1, dy - 1, dw + 2, dh + 2, P.uiBorder);
@@ -296,10 +301,60 @@ export class Panels {
         r.uiRect(m.x, m.y, 2, 2, P.fire2);
       }
     }
+    // --- named places -------------------------------------------------------
+    // Only what you have actually walked to. The map filling in as you cross
+    // the basin is most of what makes a big basin worth crossing.
+    const known = (world.landmarks || []).filter(l => l.found);
+    for (const l of known) {
+      const m = toMap(l.x, l.y);
+      const hostile = l.outpost && !l.outpost.razed;
+      const col = hostile ? P.uiBad : l.cleared ? P.uiGood : P.uiAccent;
+      r.uiRect(m.x - 2, m.y - 2, 5, 5, 'rgba(9,16,13,0.8)');
+      r.uiRect(m.x - 1, m.y - 1, 3, 3, col);
+      if (dw > 200) {
+        const label = l.name.toUpperCase();
+        drawText(ctx, label, m.x + 4, m.y - 3, col, { scale: 1 });
+      }
+    }
+    // outposts you have found that are not on a named place
+    if (game.occupation) {
+      for (const o of game.occupation.outposts) {
+        if (!o.found || o.landmark) continue;
+        const m = toMap(o.x, o.y);
+        r.uiRect(m.x - 1, m.y - 1, 3, 3, o.razed ? P.uiGood : P.uiBad);
+      }
+    }
+
     const pl = toMap(game.player.x, game.player.y);
     const blink = Math.floor(game.time * 3) % 2 === 0;
     r.uiRect(pl.x - 2, pl.y - 2, 5, 5, blink ? P.cyberHot : P.cyber);
 
-    drawText(ctx, game.surveyLevel > 0 ? 'ORE SURVEYED BY WISP' : 'ASK WISP TO SURVEY THE RIDGE', px + 8, py + ph - 10, P.uiDim);
+    // --- the ledger ---------------------------------------------------------
+    const total = (world.landmarks || []).length;
+    const standing = game.occupation ? game.occupation.standing.length : 0;
+    let ly = py + ph - 11;
+    drawText(ctx, 'FOUND ' + known.length + '/' + total
+      + (standing ? '   LES NEST HOLDING ' + standing : '   BASIN CLEAR'),
+      px + 8, ly, standing ? P.uiWarn : P.uiGood);
+    drawText(ctx, game.surveyLevel > 0 ? 'ORE SURVEYED' : 'ASK WISP TO SURVEY THE RIDGE',
+      px + pw - 8, ly, P.uiDim, { align: 'right' });
+
+    // --- standing with the powers of the basin -------------------------------
+    if (game.alliances) {
+      const keys = FACTION_KEYS;
+      const colW = Math.floor((pw - 16) / keys.length);
+      const fy = py + ph - 20;
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i], f = FACTIONS[k];
+        const v = game.alliances.get(k);
+        const x = px + 8 + i * colW;
+        const t = game.alliances.tierOf(k);
+        drawText(ctx, f.short, x, fy - 15, v > 0 ? f.color : P.uiDim, { scale: 1 });
+        drawText(ctx, t >= 0 ? f.tiers[t].title.toUpperCase() : 'UNKNOWN', x, fy - 7,
+          t >= 0 ? f.color : P.uiDim, { scale: 1 });
+        r.uiRect(x, fy, colW - 8, 3, 'rgba(0,0,0,0.5)');
+        r.uiRect(x, fy, Math.round((colW - 8) * (v / 100)), 3, f.color);
+      }
+    }
   }
 }

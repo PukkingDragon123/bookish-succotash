@@ -9,6 +9,7 @@
 import { BEASTS, TEMPER } from '../art/beastiary.js';
 import { beastFrames, beastSize } from '../art/animals.js';
 import { pixFrames, pixSize, hasPixArt } from '../art/beastpix.js';
+import { factionOf } from '../systems/factions.js';
 import { bugFrames, bugGlow, FLYING_BUGS, fishFrames } from '../art/bugs.js';
 import { P } from '../art/palette.js';
 import { flashFrames } from '../art/pixel.js';
@@ -128,6 +129,12 @@ export class Animal {
   // --- relationship --------------------------------------------------------
   addTrust(n, game, reason) {
     if (this.dead) return;
+    // Helping one animal is noticed by the rest of its kind. A tenth of the
+    // trust bleeds outward, which is slow — an alliance should take a while.
+    if (n > 0 && game && game.alliances) {
+      const f = factionOf(this.key);
+      if (f) game.alliances.add(f, n * 0.06, null);
+    }
     const before = this.trust;
     this.trust = clamp(this.trust + n * (n > 0 ? this.def.trustRate : 1), 0, TRUST_DEVOTED);
     if (n > 0) {
@@ -858,3 +865,22 @@ export class Wildlife {
     for (const f of this.fish) if (cam.visible(f.x, f.y, 20)) f.draw(r);
   }
 }
+
+/**
+ * Something coming out of a pen.
+ *
+ * Whatever Les Nest had in the cages was worth catching, so it skews toward
+ * the things they can sell: fur, antler, and whatever was small enough to grab.
+ * It comes out already frightened, and already halfway to trusting you.
+ */
+Wildlife.prototype.spawnFreed = function (x, y, game) {
+  const pool = ['hare', 'fox', 'marmot', 'ferretWild', 'kit', 'squirrel', 'coyote', 'otter', 'pronghorn'];
+  const key = pool[Math.floor(Math.random() * pool.length)];
+  const a = new Animal(key, x, y);
+  a.state = 'flee';
+  a.anim = 'run';
+  a.fear = 1;
+  this.animals.push(a);
+  particles.burst(x, y - 6, 10, { colors: ['#c8c8a0', '#8a8a6a'], speed: 70, life: 0.5, gravity: 90, vz: 40 });
+  return a;
+};

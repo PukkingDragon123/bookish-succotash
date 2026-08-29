@@ -250,7 +250,7 @@ export class FirstStand {
     this.cut = null;
     this.objective = '';
     game.player.invuln = 1.5;
-    game.hud.showAnnounce('DEFEND THE BASIN', 'THEY COME IN WAVES', P.ui, 4);
+    game.hud.showAnnounce('TAKE THE BASIN BACK', 'FIND THEIR OUTPOSTS. BURN THEM DOWN.', P.ui, 4.5);
     game.toast('TALK TO EVERY ANIMAL YOU MEET  -  E  -  FEED THEM AND THEY FIGHT WITH YOU', P.uiGood, 9);
     audio.setIntensity(0.15);
   }

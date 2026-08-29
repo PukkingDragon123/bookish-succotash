@@ -551,6 +551,14 @@ export class Player {
       if (h.dead || !h.damage) continue;
       if (Math.hypot(h.x - this.x, h.y - this.y) < MELEE_REACH + 6) { h.damage(dmg, game); hits++; }
     }
+    // And so, eventually, does a relay mast, though it takes a while and she
+    // is standing under it the whole time.
+    if (game.occupation) {
+      for (const o of game.occupation.outposts) {
+        if (o.razed) continue;
+        if (Math.hypot(o.x - this.x, (o.y - 10) - (this.y - 8)) < MELEE_REACH + 16) { o.damage(dmg * 0.8, game); hits++; }
+      }
+    }
 
     if (hits) {
       game.r.camera.addShake(2.2);

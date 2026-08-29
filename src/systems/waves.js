@@ -42,7 +42,7 @@ export class Director {
     this.rng = makeRng((seed ^ 0xd17ec7) >>> 0);
     this.wave = 0;
     this.phase = PHASE.PREP;
-    this.timer = 42;                 // first prep is generous: learn the basin
+    this.timer = Infinity;           // gated: nothing comes until you provoke it
     this.prepTotal = 42;
     this.spawnQueue = [];
     this.spawnT = 0;
@@ -55,6 +55,12 @@ export class Director {
     this.announceT = 0;
     this.endless = false;
     this.peakWave = 0;
+    // Gated mode: the director stops running a clock and waits on the player.
+    // Every outpost you raze is another rung, so the escalation is something
+    // you provoke by going after them rather than something that arrives while
+    // you are picking berries.
+    this.gated = true;
+    this.razedSeen = 0;
   }
 
   get isBossWave() { return !!BOSS_WAVES[this.wave]; }
@@ -74,6 +80,7 @@ export class Director {
 
     switch (this.phase) {
       case PHASE.PREP: {
+        if (this.gated) { this.updateGate(game); break; }
         this.timer -= dt;
         // warning pips as the clock runs down
         const t = Math.ceil(this.timer);
@@ -97,7 +104,8 @@ export class Director {
         this.timer -= dt;
         if (this.timer <= 0) {
           this.phase = PHASE.PREP;
-          this.timer = PREP_TIME[Math.min(this.wave + 1, PREP_TIME.length - 1)] || 40;
+          this.timer = this.gated ? Infinity
+            : (PREP_TIME[Math.min(this.wave + 1, PREP_TIME.length - 1)] || 40);
           if (this.endless) this.timer = 34;
           this.prepTotal = this.timer;
           this._lastTick = null;
@@ -106,6 +114,27 @@ export class Director {
       }
       default: break;
     }
+  }
+
+  /**
+   * The gate.
+   *
+   * Les Nest escalate when you cost them something, not when a clock runs out.
+   * Each outpost razed moves the wave counter on, and the set pieces — the
+   * bosses and the burn — sit on the rungs, so they land as a *response* to
+   * what you have been doing instead of as the next item on a timetable.
+   */
+  updateGate(game) {
+    const occ = game.occupation;
+    if (!occ) { this.gated = false; return; }
+    const razed = occ.razed;
+    if (razed <= this.razedSeen) return;
+    this.razedSeen = razed;
+    // one wave per raid, and the last outpost brings the whole thing down
+    const target = occ.standing.length === 0 ? FINAL_WAVE : Math.min(FINAL_WAVE - 1, razed * 2);
+    if (target <= this.wave) return;
+    this.wave = target - 1;
+    this.startWave(game);
   }
 
   // ------------------------------------------------------------------- waves

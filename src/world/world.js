@@ -4,6 +4,7 @@
 // Resource nodes, decorative flora and the home den are placed on top.
 
 import { bendFrame } from './wind.js';
+import { placeLandmarks, DISCOVER_R } from './landmarks.js';
 import { makeRng, hash2 } from '../engine/rng.js';
 import { fbm, ridged, warpedFbm, cellular } from './noise.js';
 import { T, TILES, TS, drawTile, isSolid, isWater, tileSpeed } from './tiles.js';
@@ -57,6 +58,7 @@ export class World {
     this.time = 0;
     this.geysers = [];
     this.den = { x: 0, y: 0 };
+    this.landmarks = [];
     this.npcSpots = [];
     // A blank world skips terrain generation entirely: the lab lays its own
     // floor plan into the same arrays.
@@ -69,6 +71,20 @@ export class World {
   tileAtPx(x, y) { return this.tileAt(Math.floor(x / TS), Math.floor(y / TS)); }
   solidAtPx(x, y) { return isSolid(this.tileAtPx(x, y)); }
   speedAtPx(x, y) { return tileSpeed(this.tileAtPx(x, y)); }
+
+  elevAt(tx, ty) { return this.inBounds(tx, ty) ? this.elev[this.idx(tx, ty)] : 0; }
+  heatAt(tx, ty) { return this.inBounds(tx, ty) ? this.heat[this.idx(tx, ty)] : 0; }
+
+  /** How many tiles within `r` satisfy `fn` — used for siting landmarks. */
+  nearTile(tx, ty, r, fn) {
+    let n = 0;
+    for (let j = -r; j <= r; j++) {
+      for (let i = -r; i <= r; i++) {
+        if (fn(this.tileAt(tx + i, ty + j))) n++;
+      }
+    }
+    return n / ((r * 2 + 1) * (r * 2 + 1)) * 10;
+  }
 
   setTile(tx, ty, id) {
     if (!this.inBounds(tx, ty)) return;
@@ -183,6 +199,9 @@ export class World {
     this.placeDecor(rng, moistArr);
     this.placeThermalFeatures(rng);
     this.chooseHome(rng);
+    // Named places, once the ground exists and the camp has a home — they are
+    // sited off the terrain and spaced away from both.
+    this.landmarks = placeLandmarks(this, rng, { count: this.landmarkCount || 15 });
     this.rebuildGrid();
   }
 
