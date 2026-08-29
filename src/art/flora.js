@@ -7,7 +7,13 @@ import { P } from './palette.js';
 import { hash2, makeRng } from '../engine/rng.js';
 import { TAU } from '../engine/math.js';
 
-const SWAY_FRAMES = 6;
+// Bend frames, not loop frames. Frame 0 is fully bent upwind, the last is
+// fully bent downwind, and the world picks between them from the wind field —
+// so a whole hillside leans together instead of every plant twitching alone.
+const SWAY_FRAMES = 9;
+const BEND_FRAMES = 9;
+export const PLANT_BEND_FRAMES = BEND_FRAMES;
+export const TREE_BEND_FRAMES = SWAY_FRAMES;
 
 // --- trees -----------------------------------------------------------------
 
@@ -246,12 +252,28 @@ function drawFlower(ctx, rng, kind) {
       }
       break;
     case 'grass':
-    default:
-      for (let i = 0; i < 5; i++) {
-        const gx = cx + (rng() - 0.5) * 6;
-        line(ctx, gx, base, gx + (rng() - 0.5) * 4, base - 3 - rng() * 3, i % 2 ? P.grassLight : P.grass);
+    default: {
+      // A tuft is a fan of blades from one root — thick at the base, one
+      // pixel at the tip, curving over as it goes. Five random scratches is
+      // what the old one was, and it read as television static.
+      const n = 5 + Math.floor(rng() * 3);
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+        const gx = cx + t * 3.0 + (rng() - 0.5);
+        const len = (H - 2) - Math.abs(t) * (H * 0.34) - rng() * 1.6;
+        const lean = t * 3.2 + (rng() - 0.5) * 1.2;
+        const col = Math.abs(t) < 0.45 ? P.grassLight : P.grass;
+        for (let sp = 0; sp <= len; sp++) {
+          const u = sp / Math.max(1, len);
+          const bx = Math.round(gx + lean * u * u);
+          px(ctx, bx, Math.round(base - sp), col);
+          // the root end is two pixels wide, which is what stops a blade
+          // looking like a stray line of noise
+          if (u < 0.3) px(ctx, bx + (t < 0 ? -1 : 1), Math.round(base - sp), shade(col, -0.22));
+        }
       }
       break;
+    }
   }
 }
 
@@ -461,8 +483,10 @@ export function treeFrames(kind, variant = 0) {
     for (let i = 0; i < n; i++) {
       const rng = makeRng(variant * 7919 + 13);
       const ctx = surface(spec.w, spec.h);
-      const sway = Math.sin((i / n) * TAU) * 1.5;
-      spec.fn(ctx, rng, sway);
+      // A tree is heavy. It leans a long way at the crown and barely at all
+      // at the butt, and it never leans as far as grass does.
+      const bend = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
+      spec.fn(ctx, rng, bend * 2.2);
       outline(ctx, P.black);
       frames.push(ctx.canvas);
     }
@@ -474,17 +498,17 @@ export function treeShadowRadius(kind) { return (TREE_KINDS[kind] || TREE_KINDS.
 export const TREE_KIND_NAMES = Object.keys(TREE_KINDS);
 
 const PLANT_KINDS = {
-  sage: { w: 18, h: 14, fn: (c, r) => drawSage(c, r) },
-  huckleberry: { w: 20, h: 16, fn: (c, r) => drawBerryBush(c, r, 'huckleberry') },
-  serviceberry: { w: 20, h: 16, fn: (c, r) => drawBerryBush(c, r, 'serviceberry') },
-  lupine: { w: 12, h: 16, fn: (c, r) => drawFlower(c, r, 'lupine') },
-  paintbrush: { w: 12, h: 14, fn: (c, r) => drawFlower(c, r, 'paintbrush') },
-  balsamroot: { w: 14, h: 14, fn: (c, r) => drawFlower(c, r, 'balsamroot') },
-  fireweed: { w: 12, h: 18, fn: (c, r) => drawFlower(c, r, 'fireweed') },
-  beargrass: { w: 16, h: 18, fn: (c, r) => drawFlower(c, r, 'beargrass') },
-  mushroom: { w: 14, h: 10, fn: (c, r) => drawFlower(c, r, 'mushroom') },
-  fern: { w: 18, h: 14, fn: (c, r) => drawFlower(c, r, 'fern') },
-  grass: { w: 12, h: 10, fn: (c, r) => drawFlower(c, r, 'grass') },
+  sage: { bend: 1.3, w: 18, h: 14, fn: (c, r) => drawSage(c, r) },
+  huckleberry: { bend: 1.2, w: 20, h: 16, fn: (c, r) => drawBerryBush(c, r, 'huckleberry') },
+  serviceberry: { bend: 1.2, w: 20, h: 16, fn: (c, r) => drawBerryBush(c, r, 'serviceberry') },
+  lupine: { bend: 3.4, w: 12, h: 16, fn: (c, r) => drawFlower(c, r, 'lupine') },
+  paintbrush: { bend: 3.0, w: 12, h: 14, fn: (c, r) => drawFlower(c, r, 'paintbrush') },
+  balsamroot: { bend: 2.4, w: 14, h: 14, fn: (c, r) => drawFlower(c, r, 'balsamroot') },
+  fireweed: { bend: 3.8, w: 12, h: 18, fn: (c, r) => drawFlower(c, r, 'fireweed') },
+  beargrass: { bend: 3.6, w: 16, h: 18, fn: (c, r) => drawFlower(c, r, 'beargrass') },
+  mushroom: { bend: 0, w: 14, h: 10, fn: (c, r) => drawFlower(c, r, 'mushroom') },
+  fern: { bend: 2.2, w: 18, h: 14, fn: (c, r) => drawFlower(c, r, 'fern') },
+  grass: { bend: 4.2, w: 12, h: 10, fn: (c, r) => drawFlower(c, r, 'grass') },
 };
 export const PLANT_KIND_NAMES = Object.keys(PLANT_KINDS);
 
@@ -492,12 +516,17 @@ export function plantFrames(kind, variant = 0) {
   const spec = PLANT_KINDS[kind] || PLANT_KINDS.grass;
   return getSheet(`plant:${kind}:${variant}`, () => {
     const frames = [];
-    for (let i = 0; i < 4; i++) {
+    const pad = 5;
+    for (let i = 0; i < BEND_FRAMES; i++) {
       const rng = makeRng(variant * 104729 + 17);
-      const ctx = surface(spec.w + 4, spec.h);
-      const sway = Math.sin((i / 4) * TAU) * 1.2;
+      const ctx = surface(spec.w + pad * 2, spec.h);
+      const bend = (i / (BEND_FRAMES - 1)) * 2 - 1;
+      // Shear, not shift. Grass is rooted: the base stays exactly where it is
+      // and the tips travel. Sliding the whole sprite sideways is what made
+      // the old meadow look like it was shivering rather than blowing.
+      const k = bend * (spec.bend == null ? 3.0 : spec.bend) / Math.max(1, spec.h);
       ctx.save();
-      ctx.translate(sway, 0);
+      ctx.setTransform(1, 0, -k, 1, pad + k * spec.h, 0);
       spec.fn(ctx, rng);
       ctx.restore();
       outline(ctx, P.black);

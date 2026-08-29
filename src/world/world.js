@@ -3,6 +3,7 @@
 // old burn scar and a geyser basin with its rings of thermophile mats.
 // Resource nodes, decorative flora and the home den are placed on top.
 
+import { bendFrame } from './wind.js';
 import { makeRng, hash2 } from '../engine/rng.js';
 import { fbm, ridged, warpedFbm, cellular } from './noise.js';
 import { T, TILES, TS, drawTile, isSolid, isWater, tileSpeed } from './tiles.js';
@@ -249,24 +250,32 @@ export class World {
         const r = hash2(tx, ty, 202);
         const x = tx * TS + TS / 2 + (hash2(tx, ty, 57) - 0.5) * 12;
         const y = ty * TS + TS / 2 + (hash2(tx, ty, 58) - 0.5) * 12;
+        // Flowers grow in patches, not evenly sprinkled over every square
+        // metre of the county. This is a slow field: where it is high you get
+        // a bed of one species, and everywhere else you get none, which is
+        // both what a meadow looks like and a quarter of the sprites.
+        const patch = fbm(tx * 0.09, ty * 0.09, 3, 909);
+        const bloom = patch > 0.60;
+        const species = FLOWERS[Math.floor(hash2(Math.floor(tx / 7), Math.floor(ty / 7), 61) * FLOWERS.length)];
+
         let kind = null;
         if (id === T.DUFF) {
-          if (r < 0.16) kind = 'fern';
-          else if (r < 0.24) kind = 'mushroom';
-          else if (r < 0.36) kind = 'grass';
+          if (r < 0.05) kind = 'fern';
+          else if (patch > 0.66 && r < 0.11) kind = 'mushroom';
+          else if (r < 0.13) kind = 'grass';
         } else if (id === T.GRASS) {
-          if (r < 0.30) kind = 'grass';
-          else if (r < 0.38) kind = FLOWERS[Math.floor(hash2(tx, ty, 61) * FLOWERS.length)];
+          if (r < 0.12) kind = 'grass';
+          else if (bloom && r < 0.20) kind = species;
         } else if (id === T.MEADOW || id === T.MEADOW_DRY) {
-          if (r < 0.26) kind = 'grass';
-          else if (r < 0.44) kind = FLOWERS[Math.floor(hash2(tx, ty, 62) * FLOWERS.length)];
+          if (r < 0.11) kind = 'grass';
+          else if (bloom && r < 0.26) kind = species;
         } else if (id === T.SAGE) {
-          if (r < 0.18) kind = 'grass';
+          if (r < 0.07) kind = 'grass';
         } else if (id === T.ASH || id === T.CHARRED) {
-          if (r < 0.10) kind = 'fireweed';   // first thing back after a burn
+          if (bloom && r < 0.08) kind = 'fireweed';   // first thing back after a burn
         }
         if (kind) this.decor.push({ x, y, kind, variant: Math.floor(hash2(tx, ty, 63) * 4), type: 'decor' });
-        if (!kind && r > 0.985) this.props.push({ x, y, kind: 'bones', variant: Math.floor(hash2(tx, ty, 64) * 3), type: 'prop' });
+        if (!kind && r > 0.9955) this.props.push({ x, y, kind: 'bones', variant: Math.floor(hash2(tx, ty, 64) * 3), type: 'prop' });
       }
     }
   }
@@ -548,20 +557,19 @@ export function worldObjectSprite(o, time) {
     const d = o.def;
     if (d.art === 'tree') {
       const f = treeFrames(d.kind, o.variant);
-      const i = Math.floor((time * 1.1 + o.x * 0.02 + o.y * 0.013) % 1 * f.length);
-      return f[i];
+      return f[f.length === 1 ? 0 : bendFrame(o.x, o.y, time, f.length)];
     }
     if (d.art === 'rock') return rockSprite(d.kind, o.variant);
     if (d.art === 'plant') {
       const f = plantFrames(d.kind, o.variant);
-      const i = Math.floor((time * 0.9 + o.x * 0.03) % 1 * f.length);
-      return f[i];
+      return f[bendFrame(o.x, o.y, time, f.length)];
     }
   }
   if (o.type === 'decor') {
     const f = plantFrames(o.kind, o.variant);
-    const i = Math.floor((time * 0.8 + o.x * 0.04 + o.y * 0.02) % 1 * f.length);
-    return f[i];
+    // Everything on the hillside bends off the same field, so a gust visibly
+    // crosses the meadow instead of every tuft twitching on its own clock.
+    return f[bendFrame(o.x, o.y, time, f.length)];
   }
   if (o.type === 'stump') return treeFrames('stump', o.variant)[0];
   if (o.type === 'labprop') return labProp(o.kind, o.variant);

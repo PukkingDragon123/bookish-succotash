@@ -1,0 +1,49 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>pix</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#20281c}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import { pixFrames, pixSize, pixSilhouette, BEAST_PIX_KEYS, PIX } from '../src/art/beastpix.js';
+import { drawText } from '../src/engine/font.js';
+
+const qp = new URLSearchParams(location.search);
+const only = qp.get('only');
+let keys = BEAST_PIX_KEYS();
+if (only) keys = only.split(',').filter(k => keys.includes(k));
+const Z = Number(new URLSearchParams(location.search).get('z') || 3);
+const W = 620;
+// measure first so the sheet is exactly tall enough
+let H = 10;
+for (const k of keys) H += pixSize(k).h + 14;
+const c = document.getElementById('c');
+c.width = W * Z; c.height = H * Z;
+const ctx = c.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+ctx.scale(Z, Z);
+ctx.fillStyle = '#20281c'; ctx.fillRect(0, 0, W, H);
+
+let y = 6;
+for (const k of keys) {
+  const sz = pixSize(k);
+  drawText(ctx, k.toUpperCase() + '  ' + sz.w + 'x' + sz.h, 4, y, '#8ac47a');
+  let x = 4, top = y + 8;
+  // ground line, so a floating or sunk animal is obvious
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fillRect(0, top + sz.h - PIX, W, 1);
+  for (const anim of ['idle', 'alert', 'graze', 'walk', 'run']) {
+    const n = (anim === 'walk' || anim === 'run') ? 4 : 1;
+    const f = pixFrames(k, anim, 8);
+    for (let i = 0; i < n; i++) {
+      const img = f[Math.floor(i * f.length / n)];
+      if (x + img.width + 2 > W - 60) break;
+      ctx.drawImage(img, x, top);
+      x += img.width + 2;
+    }
+    x += 3;
+  }
+  const sil = pixSilhouette(k);
+  if (x + sil.width < W) ctx.drawImage(sil, x, top);
+  y = top + sz.h + 6;
+}
+document.title = 'pix ok ' + keys.length;
+window.__done = true;
+</script></body></html>

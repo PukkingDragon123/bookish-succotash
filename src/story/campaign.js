@@ -11,6 +11,7 @@ import { labProp, heliFrames } from '../art/lab.js';
 import { HUMANS } from '../art/species.js';
 import { BEASTS } from '../art/beastiary.js';
 import { critterFrames, critterSize } from '../art/critters.js';
+import { pixFrames, pixSize, hasPixArt } from '../art/beastpix.js';
 import { beastFrames, beastSize } from '../art/animals.js';
 import { P } from '../art/palette.js';
 import { flashFrames } from '../art/pixel.js';
@@ -62,7 +63,9 @@ export class Actor {
       this.w = img ? img.width : 16;
       this.h = img ? img.height : 16;
     } else {
-      const s = kind === 'beast' ? beastSize(cfg) : critterSize(cfg);
+      const s = kind === 'beast'
+        ? (hasPixArt(this.key) ? pixSize(this.key) : beastSize(cfg))
+        : critterSize(cfg);
       this.w = s.w; this.h = s.h;
     }
     this.r = 6;
@@ -72,9 +75,11 @@ export class Actor {
 
   frames(anim, view) {
     if (this.kind === 'prop') return [labProp(this.propKind || this.cfg, 0)];
-    return this.kind === 'beast'
-      ? beastFrames('a:' + this.key, this.cfg, anim, view, 8)
-      : critterFrames('a:' + this.key, this.cfg, anim, view, 8);
+    if (this.kind === 'beast') {
+      if (hasPixArt(this.key)) return pixFrames(this.key, anim, 8);
+      return beastFrames('a:' + this.key, this.cfg, anim, view, 8);
+    }
+    return critterFrames('a:' + this.key, this.cfg, anim, view, 8);
   }
 
   moveTo(x, y, speed) { this.target = { x, y }; this.speed = speed; }

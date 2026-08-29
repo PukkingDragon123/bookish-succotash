@@ -2,6 +2,7 @@
 // the UI, and provides the shared services (spawn a bullet, explode, toast,
 // drop loot) that the entity classes call back into.
 
+import { updateWind, gustBurst } from './world/wind.js';
 import { Renderer, VIEW_W, VIEW_H } from './engine/canvas.js';
 import { Input } from './engine/input.js';
 import { toggleFullscreen } from './engine/touch.js';
@@ -365,6 +366,7 @@ export class Game {
   updateTitle(dt) {
     this.titleT += dt;
     this.time += dt;
+    updateWind(dt);
     particles.update(dt);
     this.world.update(dt * 0.5);
     this.r.camera.update(dt);

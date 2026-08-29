@@ -8,6 +8,7 @@
 
 import { BEASTS, TEMPER } from '../art/beastiary.js';
 import { beastFrames, beastSize } from '../art/animals.js';
+import { pixFrames, pixSize, hasPixArt } from '../art/beastpix.js';
 import { bugFrames, bugGlow, FLYING_BUGS, fishFrames } from '../art/bugs.js';
 import { P } from '../art/palette.js';
 import { flashFrames } from '../art/pixel.js';
@@ -70,7 +71,8 @@ export class Animal {
     this.chargeT = 0;
     this.curlT = 0;
 
-    const s = beastSize(this.cfg);
+    // Drawn sprites where we have them; the old solved rig is the fallback.
+    const s = hasPixArt(this.key) ? pixSize(this.key) : beastSize(this.cfg);
     this.w = s.w; this.h = s.h;
   }
 
@@ -95,6 +97,7 @@ export class Animal {
   }
 
   frames(anim, view, expr) {
+    if (hasPixArt(this.key)) return pixFrames(this.key, anim, 8, undefined, expr || this.expression);
     return beastFrames('b:' + this.key, this.cfg, anim, view, 8, expr || this.expression);
   }
 
