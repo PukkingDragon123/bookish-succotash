@@ -110,8 +110,12 @@ const parts = order.map(f =>
 
 // --- wrap it up -------------------------------------------------------------
 const bundled = parts.join('\n');
-const out = process.argv[2] || 'dist/ferret-fights-back.html';
-const artifact = process.argv.includes('--artifact');
+const flags = process.argv.slice(2).filter(a => a.startsWith('--'));
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const artifact = flags.includes('--artifact');
+// Flags are not filenames. Reading argv[2] blindly wrote a file called
+// "--artifact" into the repo root the first time the flag came first.
+const out = args[0] || (artifact ? 'dist/_artifact-preview.html' : 'dist/ferret-fights-back.html');
 
 // Same boot code either way: main.js is already in the file, so the dynamic
 // import the served page uses has nothing left to fetch.

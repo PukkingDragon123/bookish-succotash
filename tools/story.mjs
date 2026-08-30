@@ -32,11 +32,18 @@ await page.waitForTimeout(400);
 // page instead of hoping a poll lands on the right frame.
 await page.evaluate(() => {
   window.__seen = new Set();
+  // The campaign is torn down the moment it hands over to the forest, so
+  // anything hanging off it has to be recorded while it is still alive rather
+  // than read back afterwards.
+  window.__fly = { hasWorld: false, w: 0 };
   setInterval(() => {
     const g = window.game;
     if (!g) return;
     window.__seen.add(g.campaign ? g.campaign.chapter : 'forest:' + g.mode);
     if (g.campaign && g.campaign.hasGun) window.__seen.add('gun');
+    if (g.campaign && g.campaign.flyWorld) {
+      window.__fly = { hasWorld: true, w: g.campaign.flyWorld.w };
+    }
     if (g.firstStand) window.__seen.add('stand:' + g.firstStand.phase);
   }, 100);
 });
@@ -302,7 +309,8 @@ check('the rampage reaches the transport', heli, 'chapters seen: ' + chapters.jo
 // chapter 10: fly it
 const flying = await page.evaluate(() => {
   const c = window.game.campaign;
-  return { hasWorld: !!c.flyWorld, w: c.flyWorld ? c.flyWorld.w : 0 };
+  if (c && c.flyWorld) return { hasWorld: true, w: c.flyWorld.w };
+  return window.__fly;      // the campaign has already handed over
 });
 check('the flight is over the real basin, not a stand-in',
   flying.hasWorld && flying.w >= 300, 'fly world ' + flying.w);
