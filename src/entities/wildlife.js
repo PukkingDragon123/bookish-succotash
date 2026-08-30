@@ -8,7 +8,7 @@
 
 import { BEASTS, TEMPER } from '../art/beastiary.js';
 import { beastFrames, beastSize } from '../art/animals.js';
-import { pixFrames, pixSize, hasPixArt } from '../art/beastpix.js';
+import { BeastRig } from '../art/beastrig.js';
 import { factionOf } from '../systems/factions.js';
 import { bugFrames, bugGlow, FLYING_BUGS, fishFrames } from '../art/bugs.js';
 import { P } from '../art/palette.js';
@@ -72,8 +72,11 @@ export class Animal {
     this.chargeT = 0;
     this.curlT = 0;
 
-    // Drawn sprites where we have them; the old solved rig is the fallback.
-    const s = hasPixArt(this.key) ? pixSize(this.key) : beastSize(this.cfg);
+    // Solved live, like the ferret. The baked sprite sheets are gone: an
+    // animal's walk is now a consequence of how far it actually moved, so it
+    // can never drift out of step with its own feet.
+    this.rig = new BeastRig(this.cfg, this.def);
+    const s = this.rig.size();
     this.w = s.w; this.h = s.h;
   }
 
@@ -97,8 +100,8 @@ export class Animal {
     return h;
   }
 
+  /** Kept for anything that still wants a still frame (the bestiary UI). */
   frames(anim, view, expr) {
-    if (hasPixArt(this.key)) return pixFrames(this.key, anim, 8, undefined, expr || this.expression);
     return beastFrames('b:' + this.key, this.cfg, anim, view, 8, expr || this.expression);
   }
 
@@ -569,32 +572,32 @@ export class Animal {
   // --- drawing -------------------------------------------------------------
   draw(r, game) {
     if (this.dead) return;
-    const img = this.sprite;
-    if (!img) return;
     const flying = this.def.flying;
     const yOff = flying ? -10 - Math.sin(this.bob + game.time * 3) * 2 : 0;
 
     r.shadow(this.x, this.y, this.r + 1, (this.r + 1) * 0.38, flying ? 0.18 : 0.3);
 
-    let out = img;
-    if (this.hurtT > 0 && Math.floor(this.hurtT * 30) % 2 === 0) {
-      const fr = this.frames(this.anim, this.view);
-      out = flashFrames('b:' + this.key + this.anim + this.view, fr, '#ffffff')[Math.floor(this.animT * fr.length) % fr.length];
-    }
-    const down = this.downT > 0;
-    if (down) {
-      r.drawT(out, this.x, this.y - out.height * 0.3, 1.5, this.facing < 0 ? -1 : 1, 1, 0.8);
-    } else {
-      r.draw(out, this.x - img.width / 2, this.y - img.height + 2 + yOff, this.facing < 0);
-    }
+    // The rig is solved from the animal's own movement, so it only needs to be
+    // told where the animal is and what it is doing.
+    this.rig.update(game.dt || 1 / 60, {
+      x: this.x, y: this.y, vx: this.vx || 0, vy: this.vy || 0,
+      facing: this.facing < 0 ? -1 : 1,
+      anim: this.anim,
+      downed: this.downT > 0,
+    });
+    const hurtFlash = this.hurtT > 0 && Math.floor(this.hurtT * 30) % 2 === 0;
+    this.rig.draw(r, this.x, this.y + yOff, {
+      facing: this.facing < 0 ? -1 : 1,
+      flash: hurtFlash,
+    });
 
     this.drawTools(r, game, yOff);
 
-    const headY = this.y - img.height + yOff - 3;
+    const headY = this.y - this.h + yOff - 3;
     if (this.trapped) {
       r.ring(this.x, this.y - 6, 12, P.uiWarn, 1, 0.5 + Math.sin(game.time * 7) * 0.4);
     }
-    if (down) {
+    if (this.downT > 0) {
       r.ring(this.x, this.y - 4, 12, P.uiBad, 1, 0.5 + Math.sin(game.time * 6) * 0.4);
       return;
     }
@@ -694,7 +697,7 @@ export class Bug {
   draw(r, game) {
     const f = bugFrames(this.kind);
     const img = f[Math.floor(this.animT * f.length) % f.length];
-    r.draw(img, this.x - img.width / 2, this.y - img.height - this.z);
+    r.draw(img, this.x - this.w / 2, this.y - this.h - this.z);
     if (this.glow && game.nightFactor > 0.15) {
       const pulse = 0.4 + Math.abs(Math.sin(this.t * 2.4)) * 0.6;
       r.glow(this.x, this.y - this.z - 3, 10, 'rgba(200,255,120,0.6)', pulse * game.nightFactor);
@@ -725,7 +728,7 @@ export class Fish {
   draw(r) {
     const f = fishFrames('trout');
     const img = f[Math.floor(this.animT * f.length) % f.length];
-    r.draw(img, this.x - img.width / 2, this.y - img.height / 2, Math.cos(this.dir) < 0, 0.75);
+    r.draw(img, this.x - this.w / 2, this.y - this.h / 2, Math.cos(this.dir) < 0, 0.75);
   }
 }
 

@@ -125,6 +125,46 @@ export function buildLab(world, seed = 1) {
   I(hx0 + 25, hy0 + 5, 'jar', 'jar', 'LOOK AT THE JAR', {
     text: 'SUBJECT 29. The tag says FAILED OPTIC. It is curled up\nthe way you curl up when the lights go out.',
   });
+  // --- the observation room ------------------------------------------------
+  //
+  // A cage on its own is a prop. What makes it containment is the room on the
+  // other side of the glass with the kettle in it — people come in, look at
+  // you for a while, write something down, and go home. The whole first
+  // chapter is you watching them through a pane you cannot break, and the
+  // building is built so that you can see them the entire time.
+  const obX0 = hx0 + 1, obY0 = hy1 - 3, obX1 = hx0 + 22, obY1 = hy1 - 1;
+  fill(w, obX0, obY0, obX1, obY1, T.LAB_TEAL);
+  for (let tx = obX0; tx <= obX1; tx++) w.tiles[w.idx(tx, obY0)] = T.LAB_GLASS;
+  // the door into it is card-locked, and the card is not in this room
+  doorway(w, obX1 - 6, obY0, obX1 - 5, obY0, T.LAB_TEAL);
+  marks.observation = { x: (obX0 + 10) * TS, y: (obY0 + 2) * TS };
+  for (let i = 0; i < 4; i++) P(obX0 + 2 + i * 5, obY0 + 2, 'console');
+  P(obX0 + 18, obY0 + 2, 'coffee');
+  P(obX0 + 20, obY0 + 1, 'clipboard');
+  marks.obsSeats = [];
+  for (let i = 0; i < 3; i++) {
+    marks.obsSeats.push({ x: (obX0 + 3 + i * 5) * TS + TS / 2, y: (obY0 + 2) * TS + TS });
+  }
+  I(obX0 + 6, obY0 + 2, 'terminal', 'read', 'READ THE OBSERVATION LOG', {
+    text: 'OBSERVATION - BLOCK C\n0840 TOUR GROUP 7 (4 PAX) ESCORTED IN.\n0902 GROUP EXITS. HEADCOUNT 3. LOGGED FOR REVIEW.\n0903 REVIEW CLOSED BY V. NO FURTHER ACTION.',
+  });
+
+  // --- card-locked doors ----------------------------------------------------
+  // Three of them, and one card. The card is on the man who did not leave.
+  marks.doors = [];
+  const CARDDOOR = (tx, ty, horiz, label, note) => {
+    const d = P(tx, ty, 'cardDoor', {
+      interactive: true, use: 'carddoor', label: label || 'LOCKED - CARD READER',
+      horiz, locked: true, note, doorIndex: marks.doors.length,
+    });
+    // the door itself is solid until it opens
+    if (horiz) { w.tiles[w.idx(tx, ty)] = T.LAB_WALL; w.tiles[w.idx(tx + 1, ty)] = T.LAB_WALL; }
+    else { w.tiles[w.idx(tx, ty)] = T.LAB_WALL; w.tiles[w.idx(tx, ty + 1)] = T.LAB_WALL; }
+    marks.doors.push({ tx, ty, horiz, prop: d, open: false, note });
+    return d;
+  };
+  marks.CARDDOOR = CARDDOOR;
+
   // the first duct: your tank block to the corridor, if you can find the grille
   VENT(hx0 + 2, cageY + 4, 20, 34, 'block C to the service run');
 
@@ -189,6 +229,30 @@ export function buildLab(world, seed = 1) {
     text: 'FACILITY NOTICE\nDUCTWORK ACCESS PANELS ARE TO REMAIN SEALED.\nTHIS IS THE THIRD NOTICE. - FACILITIES',
   });
   marks.corridor = { x: 40 * TS, y: 35 * TS };
+
+  // --- the plant room -------------------------------------------------------
+  //
+  // A dead-end off the corridor with a card reader on it. This is where the
+  // fourth visitor ended up: he took a wrong turn off the tour looking for a
+  // toilet, the door shut behind him, and the headcount that would have caught
+  // it was closed by Vane the same morning. He has been in here since.
+  const pvx0 = 74, pvy0 = 40, pvx1 = 86, pvy1 = 50;
+  room(w, pvx0, pvy0, pvx1, pvy1, T.LAB_DARK);
+  doorway(w, 79, corrY1, 80, pvy0, T.LAB_DARK);
+  CARDDOOR(79, pvy0, true, 'CARD READER  -  RED', 'plant room');
+  marks.plantRoom = { x: 80 * TS, y: 45 * TS };
+  P(pvx0 + 2, pvy0 + 3, 'pipes');
+  P(pvx1 - 3, pvy0 + 2, 'pipes');
+  P(pvx0 + 4, pvy1 - 2, 'mopBucket');
+  P(pvx1 - 2, pvy1 - 3, 'labCrate');
+  // him, and the badge that opens everything he could not open
+  marks.visitor = { x: (pvx0 + 6) * TS, y: (pvy1 - 3) * TS };
+  I(pvx0 + 6, pvy1 - 3, 'lanyard', 'lanyard', 'TAKE THE BADGE', {
+    text: 'VISITOR 0417. DAY PASS. EXPIRED 572 DAYS AGO.\nThe photograph is a man smiling in a car park.',
+  });
+  I(pvx0 + 9, pvy0 + 3, 'terminal', 'read', 'READ THE PANEL', {
+    text: 'PLANT ROOM 4 - ACCESS LOG\nIN  0851 VISITOR 0417\nOUT --:--\nDOOR CYCLED 1,206 TIMES FROM THE CORRIDOR SIDE.',
+  });
 
   // --- surgery ------------------------------------------------------------
   const sx0 = 10, sy0 = 42, sx1 = 40, sy1 = 62;

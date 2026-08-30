@@ -1,0 +1,73 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>rigs</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#20281c}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import { BEASTS, BEAST_KEYS } from '../src/art/beastiary.js';
+import { BeastRig } from '../src/art/beastrig.js';
+import { drawText } from '../src/engine/font.js';
+
+const qp = new URLSearchParams(location.search);
+const only = qp.get('only');
+const Z = Number(qp.get('z') || 3);
+const SPEEDS = (qp.get('speeds') || '0,26,70,150').split(',').map(Number);
+const STRIP = qp.get('strip') !== '0';
+let keys = BEAST_KEYS;
+if (only) keys = only.split(',').filter(k => keys.includes(k));
+
+// Each row: one species, standing / walking / trotting / galloping, plus a
+// strip of consecutive frames of the fastest gait so the cycle can be read.
+const rigs = keys.map(k => new BeastRig(BEASTS[k].cfg, BEASTS[k]));
+const rowH = rigs.map(r => Math.max(40, r.size().h + 16));
+const W = 640;
+const H = rowH.reduce((a, b) => a + b, 0) + 10;
+
+const c = document.getElementById('c');
+c.width = W * Z; c.height = H * Z;
+const ctx = c.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+ctx.scale(Z, Z);
+ctx.fillStyle = '#20281c'; ctx.fillRect(0, 0, W, H);
+
+// a fake renderer: the rig only wants ctx and a camera offset
+const r = { ctx, camera: { ox: 0, oy: 0 } };
+
+let y = 6;
+for (let i = 0; i < keys.length; i++) {
+  const key = keys[i], rig = rigs[i], b = BEASTS[key];
+  const sz = rig.size();
+  drawText(ctx, key.toUpperCase() + '  ' + sz.w + 'x' + sz.h + '  ' + b.temper, 4, y, '#8ac47a');
+  const ground = y + rowH[i] - 8;
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fillRect(0, ground, W, 1);
+
+  let x = 14 + sz.w / 2;
+  for (const speed of SPEEDS) {
+    // run the rig forward for a couple of seconds so it settles into the gait
+    rig.reset(0, 0);
+    let px = 0;
+    const dt = 1 / 60;
+    const n = speed === 0 ? 60 : 150;
+    for (let f = 0; f < n; f++) {
+      px += speed * dt;
+      rig.update(dt, { x: px, y: 0, vx: speed, vy: 0, facing: 1, anim: speed > 120 ? 'run' : 'walk' });
+    }
+    rig.draw(r, x, ground, { facing: 1 });
+    drawText(ctx, String(Math.round(speed)), x - sz.w / 2, ground + 2, '#4d5f51');
+    x += sz.w + 10;
+  }
+
+  // a strip through one cycle at a trot, to read the footfalls
+  rig.reset(0, 0);
+  let px = 0;
+  for (let f = 0; f < 200; f++) { px += 90 / 60; rig.update(1 / 60, { x: px, y: 0, vx: 90, vy: 0, facing: 1, anim: 'walk' }); }
+  for (let k = 0; STRIP && k < 6 && x + sz.w < W; k++) {
+    const target = rig.travel + rig.stride * 1.18 / 6;
+    while (rig.travel < target) { px += 90 / 60; rig.update(1 / 60, { x: px, y: 0, vx: 90, vy: 0, facing: 1, anim: 'walk' }); }
+    rig.draw(r, x, ground, { facing: 1 });
+    x += sz.w * 0.72;
+  }
+  y += rowH[i];
+}
+document.title = 'rigs ok ' + keys.length;
+window.__done = true;
+</script></body></html>

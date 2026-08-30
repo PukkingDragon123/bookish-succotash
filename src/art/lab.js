@@ -451,6 +451,76 @@ function drawSpecShelf(ctx, rng) {
   }
 }
 
+/**
+ * A card reader beside a door.
+ *
+ * The single most institutional object in the building: a beige box with one
+ * light on it that decides whether you are allowed to be where you are. Red
+ * until somebody with the right plastic waves at it.
+ */
+function drawCardDoor(ctx, rng, open) {
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  // the frame
+  rect(ctx, 0, 0, W, H, P.nestSteelDk);
+  panelPlate(ctx, 1, 1, W - 2, H - 2, P.nestSteel);
+  if (open) {
+    // both leaves retracted into the jambs
+    rect(ctx, 3, 2, 4, H - 4, P.nestSteelDk);
+    rect(ctx, W - 7, 2, 4, H - 4, P.nestSteelDk);
+    rect(ctx, 7, 3, W - 14, H - 6, '#0b1114');
+    speckle(ctx, 8, 4, W - 16, H - 8, '#16232a', 0.25, 3);
+  } else {
+    // two leaves meeting in the middle, with the seam and the hazard chevrons
+    rect(ctx, 3, 2, W - 6, H - 4, P.nestSteelHi);
+    rect(ctx, W / 2 - 1, 2, 2, H - 4, P.nestSteelDk);
+    for (let i = 0; i < 3; i++) {
+      const y = 4 + i * 5;
+      rect(ctx, 5, y, 5, 2, '#c8a02e');
+      rect(ctx, W - 10, y, 5, 2, '#c8a02e');
+    }
+    rect(ctx, 3, H - 6, W - 6, 1, P.nestSteelDk);
+  }
+  // the reader on the jamb, and its light
+  rect(ctx, W - 5, H - 14, 4, 8, '#cfc9b4');
+  rect(ctx, W - 5, H - 14, 4, 1, '#e8e2cc');
+  px(ctx, W - 3, H - 12, open ? '#5ad86a' : '#e0685a');
+  px(ctx, W - 3, H - 10, '#3a3a34');
+}
+
+/** A mug somebody left on the desk. Cold by now. */
+function drawCoffee(ctx) {
+  rect(ctx, 3, 4, 7, 7, '#d8d2c4');
+  rect(ctx, 3, 4, 7, 1, '#f0ebdc');
+  rect(ctx, 4, 5, 5, 2, '#3a2a1c');
+  rect(ctx, 10, 6, 2, 3, '#d8d2c4');
+  px(ctx, 11, 7, '#b8b2a4');
+  rect(ctx, 2, 11, 9, 1, '#8e8a80');
+}
+
+/** A clipboard on a desk, with something written on it you cannot read. */
+function drawClipboard(ctx, rng) {
+  rect(ctx, 2, 2, 11, 14, '#8a6a3a');
+  rect(ctx, 3, 4, 9, 11, '#e6e2d2');
+  rect(ctx, 5, 1, 5, 3, '#9aa0a4');
+  for (let i = 0; i < 5; i++) {
+    rect(ctx, 4, 6 + i * 2, 4 + Math.floor(rng() * 5), 1, '#7a7668');
+  }
+}
+
+/** A visitor lanyard, dropped. This is the thing you are looking for. */
+function drawLanyard(ctx) {
+  // the cord
+  line(ctx, 3, 1, 7, 7, '#2a4a6a');
+  line(ctx, 11, 1, 7, 7, '#2a4a6a');
+  // the badge
+  rect(ctx, 3, 7, 9, 8, '#e6e2d2');
+  rect(ctx, 3, 7, 9, 1, '#f4f0e2');
+  rect(ctx, 4, 8, 4, 4, '#9aa8b0');       // the photograph
+  rect(ctx, 4, 13, 7, 1, '#7a7668');
+  rect(ctx, 9, 9, 2, 2, '#c8a02e');       // the company mark
+  rect(ctx, 3, 14, 9, 1, '#b8b2a0');
+}
+
 const LAB_PROPS = {
   cage:       { w: 40, h: 40, fn: (c, r) => drawCage(c, r, 'whole') },
   cageCracked:{ w: 40, h: 40, fn: (c, r) => drawCage(c, r, 'cracked') },
@@ -482,6 +552,11 @@ const LAB_PROPS = {
   signWay:    { w: 22, h: 10, fn: (c, r) => drawSign(c, r, 'way') },
   mopBucket:  { w: 14, h: 16, fn: drawMopBucket },
   specShelf:  { w: 28, h: 28, fn: drawSpecShelf },
+  cardDoor:   { w: 28, h: 30, fn: (c, r) => drawCardDoor(c, r, false) },
+  cardDoorOpen:{ w: 28, h: 30, fn: (c, r) => drawCardDoor(c, r, true) },
+  coffee:     { w: 14, h: 13, fn: drawCoffee },
+  clipboard:  { w: 15, h: 17, fn: drawClipboard },
+  lanyard:    { w: 15, h: 16, fn: drawLanyard },
 };
 export const LAB_PROP_NAMES = Object.keys(LAB_PROPS);
 

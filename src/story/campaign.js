@@ -22,6 +22,8 @@ import { rnd, chance, pick } from '../engine/rng.js';
 import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
 import { TS, T } from '../world/tiles.js';
+import { World, CHUNK } from '../world/world.js';
+import { FOREST_W, FOREST_H } from '../game.js';
 import { VIEW_W, VIEW_H } from '../engine/canvas.js';
 
 /** One notch lighter, for the lit crown of a tree seen from above. */
@@ -279,7 +281,9 @@ export class Campaign {
       beat.clearLine(),
       beat.wait(0.6),
       beat.do(() => { this.objective = 'MOVE  -  THE TANK IS SMALL'; }),
+      beat.do((game) => { this.spawnObservers(); this.startTour(game); }),
       beat.say('DAX', "Psst. Forty-one. You awake over there?", 3),
+      beat.say('DAX', "Ignore the suits. Tuesday is tour day. They bring people to look at us.", 4.2),
       beat.say('DAX', "Course you are. You never sleep after they take you down the hall.", 3.6),
       beat.say('DAX', "Name's Dax. Tank nine. Been counting the ceiling tiles for two years.", 4),
       beat.clearLine(),
@@ -360,6 +364,113 @@ export class Campaign {
    * hear the chair a long time before you see it. He never raises his voice
    * and he never gets out of the chair. He does not need to.
    */
+  /**
+   * The people on the other side of the glass.
+   *
+   * Three of them, at consoles, for the whole first chapter. They are not a
+   * threat and they never do anything — that is the point. Containment is not
+   * a locked door, it is somebody drinking tea four metres away while they
+   * write down how you slept.
+   */
+  spawnObservers() {
+    const seats = this.marks.obsSeats || [];
+    this.observers = [];
+    const kinds = ['scientist', 'scientist', 'enforcer'];
+    for (let i = 0; i < seats.length; i++) {
+      const cfg = (HUMANS[kinds[i]] || HUMANS.scientist).cfg;
+      const a = new Actor('critter', cfg, seats[i].x, seats[i].y, {
+        name: 'Observer', key: 'obs' + i, facing: -1, anim: 'idle',
+      });
+      a.deskT = Math.random() * 3;
+      this.observers.push(a);
+      this.actors.push(a);
+    }
+  }
+
+  /** Idle life for the observation room: they lean, write, and look up. */
+  updateObservers(dt) {
+    if (!this.observers) return;
+    for (const a of this.observers) {
+      a.deskT -= dt;
+      if (a.deskT <= 0) {
+        a.deskT = 2 + Math.random() * 5;
+        a.anim = a.anim === 'idle' ? 'work' : 'idle';
+      }
+    }
+  }
+
+  /**
+   * The tour.
+   *
+   * Four visitors come in, are walked past the tanks, and are walked out
+   * again. The guide counts them at the door on the way out and gets three.
+   * Nobody stops. Nobody comes back. The headcount is in the observation log
+   * if you go and read it, and the fourth one is still in this building.
+   */
+  startTour(game) {
+    if (this.tourDone) return;
+    this.tourDone = true;
+    const c = this.marks.cage;
+    const y = c.y + 70;
+    const x0 = c.x - 190;
+    const kinds = ['scientist', 'logger', 'trapper', 'poacher'];
+    this.tour = [];
+    for (let i = 0; i < 4; i++) {
+      const cfg = (HUMANS[kinds[i]] || HUMANS.scientist).cfg;
+      const a = new Actor('critter', cfg, x0 - i * 20, y + (i % 2) * 8, {
+        name: i === 0 ? 'Guide' : 'Visitor', key: 'tour' + i, facing: 1, anim: 'walk',
+      });
+      this.tour.push(a);
+      this.actors.push(a);
+    }
+    this.tourPhase = 'in';
+    this.tourT = 0;
+    for (let i = 0; i < this.tour.length; i++) {
+      this.tour[i].moveTo(c.x + 30 - i * 22, y + (i % 2) * 8, 42);
+    }
+  }
+
+  updateTour(dt, game) {
+    if (!this.tour || !this.tour.length) return;
+    this.tourT += dt;
+    const c = this.marks.cage;
+    if (this.tourPhase === 'in' && this.tourT > 7) {
+      this.tourPhase = 'look';
+      this.tourT = 0;
+      for (const a of this.tour) { a.target = null; a.anim = 'idle'; a.facing = -1; }
+      game.dialogue.showFloating(this.tour[0], 'Block C. Forty-one is the one with the eye.', 3.4);
+    } else if (this.tourPhase === 'look' && this.tourT > 5.5) {
+      game.dialogue.showFloating(this.tour[2], 'Does it know we are here?', 2.8);
+    }
+    if (this.tourPhase === 'look' && this.tourT > 9) {
+      this.tourPhase = 'out';
+      this.tourT = 0;
+      // The fourth one hangs back. Nobody notices, because nobody is counting
+      // until they are already at the door.
+      this.stayed = this.tour[3];
+      for (const a of this.tour) {
+        if (a === this.stayed) continue;
+        a.anim = 'walk'; a.facing = -1;
+        a.moveTo(c.x - 240, a.y, 46);
+      }
+      this.stayed.anim = 'idle';
+      this.stayed.moveTo(c.x + 74, c.y + 46, 22);
+    } else if (this.tourPhase === 'out' && this.tourT > 6.5) {
+      this.tourPhase = 'gone';
+      game.dialogue.showFloating(this.tour[0], 'One, two, three. Right, that is everyone.', 3.2);
+      // the three who left stop existing; the fourth does not
+      this.actors = this.actors.filter(a => a === this.stayed || !this.tour.includes(a));
+      this.tour = [this.stayed];
+      this.stayed.moveTo(c.x + 110, c.y + 60, 18);
+    } else if (this.tourPhase === 'gone' && this.tourT > 9) {
+      // he wanders off toward the service corridor and is not seen again
+      this.tourPhase = 'lost';
+      this.actors = this.actors.filter(a => a !== this.stayed);
+      this.tour = [];
+      this.visitorLost = true;
+    }
+  }
+
   spawnVane(game) {
     const m = this.marks.cage;
     this.vane = new Actor('prop', 'chair', m.x + 150, m.y - 34, { name: 'Vane', key: 'vane', prop: 'chair' });
@@ -653,6 +764,25 @@ export class Campaign {
       vx: 0, vy: 0, hp: 100, t: 0, phase: 'climb',
       hazards: [], scroll: 0, smoke: 0, crashT: 0,
     };
+
+    // Generate the actual basin now, and fly over THAT.
+    //
+    // The flight used to be a field of procedural blobs standing in for a
+    // forest, which is a cheat you can feel: you spend a minute over scenery
+    // that has nothing to do with the place you are about to land in. Building
+    // the real world here means the river you cross on the way down is the
+    // river you will be standing next to in ninety seconds, and the handover
+    // reuses it instead of generating a second, different basin.
+    if (!this.flyWorld) {
+      this.flyWorld = new World(g.seed, FOREST_W, FOREST_H);
+      // pick a line across it that actually crosses something worth seeing
+      const w = this.flyWorld;
+      this.flyPath = {
+        x: w.den.x - w.pxW * 0.28, y: w.pxH * 0.86,
+        tx: w.den.x, ty: w.den.y,
+      };
+    }
+    this.flyCam = { x: this.flyPath.x, y: this.flyPath.y };
     audio.setIntensity(0.8);
     g.hud.showAnnounce('GET OUT', 'STEER WITH MOVE', P.sulfurHi, 3);
   }
@@ -710,8 +840,51 @@ export class Campaign {
       case 'vent':
         this.enterVent(o, game);
         break;
+      case 'lanyard': {
+        // The badge off the fourth visitor. It opens every red reader in the
+        // building, which he could have used at any point in the last year and
+        // a half had it been on the corridor side of the door.
+        o.spent = true;
+        o.interactive = false;
+        this.hasCard = true;
+        this.readLines = (o.text || '').split('\n');
+        this.readT = 7;
+        audio.play('coinup', { vol: 0.6 });
+        game.toast('VISITOR BADGE  -  IT OPENS THE RED DOORS', P.uiGood, 4);
+        game.announce('VISITOR 0417', 'HE NEVER SIGNED OUT', P.nestEye, 4);
+        break;
+      }
+      case 'carddoor': {
+        if (!this.hasCard) {
+          audio.play('deny', { vol: 0.6 });
+          game.toast('THE READER IS RED  -  YOU NEED A CARD', P.uiBad, 2.4);
+          break;
+        }
+        this.openCardDoor(o, game);
+        break;
+      }
       default: break;
     }
+  }
+
+  /** Swipe in. The leaves retract and the tiles behind them stop being wall. */
+  openCardDoor(o, game) {
+    if (o.opened) return;
+    o.opened = true;
+    o.locked = false;
+    o.interactive = false;
+    o.kind = 'cardDoorOpen';
+    const d = (this.marks.doors || []).find(x => x.prop === o);
+    if (d) {
+      d.open = true;
+      const w = game.world;
+      const set = (tx, ty) => { w.tiles[w.idx(tx, ty)] = T.LAB_DARK; w.invalidateChunkAt(tx, ty); };
+      if (d.horiz) { set(d.tx, d.ty); set(d.tx + 1, d.ty); }
+      else { set(d.tx, d.ty); set(d.tx, d.ty + 1); }
+    }
+    audio.play('metal', { vol: 0.8, pitch: 1.15 });
+    game.r.camera.addShake(1.5);
+    game.toast('READER GREEN', P.uiGood, 2);
   }
 
   /**
@@ -764,6 +937,8 @@ export class Campaign {
   }
 
   update(dt, game) {
+    this.updateObservers(dt);
+    this.updateTour(dt, game);
     this.t += dt;
     this.chipVoiceT = Math.max(0, this.chipVoiceT - dt);
     this.readT = Math.max(0, this.readT - dt);
@@ -1098,48 +1273,79 @@ export class Campaign {
     if (!h) return;
     const H = VIEW_H, W = VIEW_W;
 
-    // --- the ground, seen from above --------------------------------------
-    // You are looking straight down at night, so there is no sky in this
-    // picture: it is canopy, water and whatever is still lit down there.
-    const gnd = ctx.createLinearGradient(0, 0, 0, H);
-    gnd.addColorStop(0, '#0b1512');
-    gnd.addColorStop(0.6, '#0f1c17');
-    gnd.addColorStop(1, '#14231c');
-    ctx.fillStyle = gnd;
-    ctx.fillRect(0, 0, W, H);
+    // --- the basin, from a thousand feet --------------------------------------
+    //
+    // This is the real generated world, drawn at a third scale with the camera
+    // tracking along the flight path. Everything down there is where it will
+    // be when you land on it: the river, the burn scar, the meadows, the
+    // outposts with their lights on. Flying over a stand-in and then landing
+    // somewhere else is the sort of seam you cannot unsee once you notice it.
+    const wld = this.flyWorld;
+    const ZOOM = 0.34;
+    if (wld) {
+      // travel: the flight runs from the south-west corner toward the den
+      const p = this.flyPath;
+      const prog = clamp(h.scroll / 2600, 0, 1);
+      this.flyCam.x = lerp(p.x, p.tx, prog);
+      this.flyCam.y = lerp(p.y, p.ty, prog);
 
-    // Canopy in three parallax bands. Closest is biggest and lightest, which
-    // is what sells the altitude.
-    const band = (speed, size, colour, count, seed) => {
-      for (let i = 0; i < count; i++) {
-        const gx = ((i * 71 + seed * 29) % (W + 40)) - 20;
-        const gy = H - (((i * 43 + h.scroll * speed) % (H + 80)) - 40);
-        if (gy < -14 || gy > H + 14) continue;
-        // a crown seen from above: a blob with a lighter centre
-        r.uiRect(gx, gy, size * 2, size * 2, colour);
-        r.uiRect(gx + 1, gy - 1, size * 2 - 2, size * 2 + 2, colour);
-        r.uiRect(gx + size - 1, gy + size - 1, 2, 2, shadeUp(colour));
-      }
-    };
-    band(0.30, 2, '#132019', 46, 1);
-    band(0.58, 3, '#18291f', 38, 5);
-    band(1.00, 4, '#1f3527', 30, 9);
+      // `ox`/`oy` are derived from the camera's centre, so the centre is what
+      // gets moved — and moved back before anything else reads it.
+      const cam = r.camera;
+      const keepX = cam.x, keepY = cam.y, kSX = cam.shakeX, kSY = cam.shakeY;
+      ctx.save();
+      ctx.scale(ZOOM, ZOOM);
+      cam.shakeX = 0; cam.shakeY = 0;
+      cam.x = this.flyCam.x + VIEW_W / 2 - (W / ZOOM) / 2;
+      cam.y = this.flyCam.y + VIEW_H / 2 - (H / ZOOM) / 2;
+      try {
+        // Chunks covering the scaled viewport. drawGround() sizes itself off
+        // VIEW_W/VIEW_H, which is a third of what is on screen once the
+        // context is scaled down, so the range is walked here instead.
+        const cw = CHUNK * TS;
+        const x0 = Math.floor(cam.ox / cw), x1 = Math.floor((cam.ox + W / ZOOM) / cw);
+        const y0 = Math.floor(cam.oy / cw), y1 = Math.floor((cam.oy + H / ZOOM) / cw);
+        for (let cy = y0; cy <= y1; cy++) {
+          for (let cx = x0; cx <= x1; cx++) {
+            if (cx < 0 || cy < 0 || cx * CHUNK >= wld.w || cy * CHUNK >= wld.h) continue;
+            ctx.drawImage(wld.getChunk(cx, cy), cx * cw - cam.ox, cy * cw - cam.oy);
+          }
+        }
+        // and the trees, so the canopy under you is the canopy you land in
+        const list = [];
+        for (const o of wld.props) {
+          if (o.x < cam.ox - 40 || o.x > cam.ox + W / ZOOM + 40) continue;
+          if (o.y < cam.oy - 40 || o.y > cam.oy + H / ZOOM + 40) continue;
+          list.push(o);
+        }
+        for (const n of wld.nodes) {
+          if (!n.alive || !n.def.tall) continue;
+          if (n.x < cam.ox - 40 || n.x > cam.ox + W / ZOOM + 40) continue;
+          if (n.y < cam.oy - 40 || n.y > cam.oy + H / ZOOM + 40) continue;
+          list.push(n);
+        }
+        list.sort((a, b) => (a.y || 0) - (b.y || 0));
+        for (const o of list) game.drawWorldObject(r, o);
+      } catch (e) { /* the flight must never be the thing that crashes */ }
+      cam.x = keepX; cam.y = keepY; cam.shakeX = kSX; cam.shakeY = kSY;
+      ctx.restore();
 
-    // clearings and bare rock, so the canopy is not uniform
-    for (let i = 0; i < 14; i++) {
-      const gx = ((i * 137) % (W + 60)) - 30;
-      const gy = H - (((i * 91 + h.scroll * 0.8) % (H + 120)) - 60);
-      if (gy < -20 || gy > H + 20) continue;
-      r.uiRect(gx, gy, 18 + (i % 4) * 9, 9 + (i % 3) * 5, i % 3 ? '#1b2a22' : '#2a2a24');
-    }
-
-    // the river, catching the only real light in the picture
-    for (let y = -4; y < H + 4; y += 2) {
-      const t = (y + h.scroll * 1.0) * 0.02;
-      const rx = W * 0.5 + Math.sin(t) * W * 0.3 + Math.sin(t * 2.3) * W * 0.08;
-      r.uiRect(Math.round(rx - 6), H - y, 12, 2, '#16303a');
-      r.uiRect(Math.round(rx - 3), H - y, 6, 2, '#22485a');
-      if (((y + Math.floor(h.t * 40)) % 18) === 0) r.uiRect(Math.round(rx - 1), H - y, 2, 2, '#4a7f96');
+      // Dusk over the top of it. Enough to say "night, and a long way down",
+      // not so much that the thing you spent a whole chapter flying over turns
+      // into a brown smear — the point of the sequence is that you can see it.
+      const night = ctx.createLinearGradient(0, 0, 0, H);
+      night.addColorStop(0, 'rgba(10,16,26,0.58)');
+      night.addColorStop(1, 'rgba(12,20,26,0.40)');
+      ctx.fillStyle = night;
+      ctx.fillRect(0, 0, W, H);
+      // a cold rim of moonlight from the north-west, so the ridges have a side
+      ctx.globalCompositeOperation = 'lighter';
+      const moon = ctx.createLinearGradient(0, 0, W * 0.7, H);
+      moon.addColorStop(0, 'rgba(90,120,150,0.16)');
+      moon.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = moon;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'source-over';
     }
 
     // The facility falling away behind you: floodlights and a fire, only for
@@ -1155,7 +1361,6 @@ export class Campaign {
       for (let i = 0; i < 7; i++) {
         const lx = Math.round(30 + i * ((W - 60) / 6));
         const ly = Math.round(H - 8 + Math.sin(i) * 3);
-        // a soft point of light, not a box: a bright core with two faint arms
         ctx.globalAlpha = glow * 0.9;
         r.uiRect(lx, ly, 1, 1, '#ffe6bc');
         ctx.globalAlpha = glow * 0.4;
@@ -1169,13 +1374,23 @@ export class Campaign {
       ctx.globalAlpha = 1;
     }
 
-    // a few lights still on in the trees: vehicles, camps, nothing friendly
-    for (let i = 0; i < 5; i++) {
-      const gx = ((i * 211) % (W + 40)) - 20;
-      const gy = H - (((i * 157 + h.scroll * 0.9) % (H + 200)) - 100);
-      if (gy < 0 || gy > H) continue;
-      const on = ((i * 7 + Math.floor(h.t * 2)) % 5) !== 0;
-      if (on) r.uiRect(gx, gy, 1, 1, i % 2 ? '#d8b070' : '#7fd0e0');
+    // Les Nest ground lights, at the outposts that are actually down there
+    if (wld) {
+      ctx.globalCompositeOperation = 'lighter';
+      for (const l of (wld.landmarks || [])) {
+        const sx = (l.x - this.flyCam.x) * ZOOM + W / 2;
+        const sy = (l.y - this.flyCam.y) * ZOOM + H / 2;
+        if (sx < -8 || sx > W + 8 || sy < -8 || sy > H + 8) continue;
+        const on = ((l.id * 7 + Math.floor(h.t * 2)) % 5) !== 0;
+        if (!on) continue;
+        ctx.globalAlpha = 0.9;
+        r.uiRect(Math.round(sx), Math.round(sy), 1, 1, '#ffd8a0');
+        ctx.globalAlpha = 0.28;
+        r.uiRect(Math.round(sx) - 1, Math.round(sy), 3, 1, '#c08a40');
+        r.uiRect(Math.round(sx), Math.round(sy) - 1, 1, 3, '#c08a40');
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
     }
 
     // --- ground fire: where the flak is coming from ------------------------

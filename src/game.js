@@ -4,6 +4,7 @@
 
 import { updateWind, gustBurst } from './world/wind.js';
 import { Occupation } from './systems/outposts.js';
+import { beginBeastFrame } from './art/beastrig.js';
 import { Alliances, FACTIONS, FACTION_KEYS, factionOf } from './systems/factions.js';
 import { DISCOVER_R } from './world/landmarks.js';
 import { outpostFrames, outpostWreck, outpostSize } from './art/outpost.js';
@@ -146,12 +147,15 @@ export class Game {
    * Generate the basin and move in. Called when the campaign ends (or when it
    * is skipped) — never before, because a 340x280 basin is not free.
    */
-  buildForest() {
+  buildForest(prebuilt = null) {
     this.mode = 'forest';
     this.campaign = null;
     this.storyDone = true;
 
-    this.world = new World(this.seed, FOREST_W, FOREST_H);
+    // The helicopter chapter flies over the real basin, so by the time you
+    // come down through the canopy the world already exists — reuse it rather
+    // than generating a second one and landing somewhere you never flew over.
+    this.world = prebuilt || new World(this.seed, FOREST_W, FOREST_H);
     this.fire = new FireSim(this.world);
     this.npcs = spawnNPCs(this.world, this.seed);
     this.wildlife = new Wildlife(this.world, this.seed);
@@ -199,7 +203,8 @@ export class Game {
    * thrown away and the survival game starts for real.
    */
   onCampaignComplete(skipped = false) {
-    this.buildForest();
+    const flown = this.campaign && this.campaign.flyWorld;
+    this.buildForest(flown);
     this.state = STATE.PLAY;
     if (skipped) {
       this.hud.showAnnounce('TAKE THE BASIN BACK', 'FIND THEIR OUTPOSTS. BURN THEM DOWN.', P.ui, 4.5);
@@ -258,6 +263,7 @@ export class Game {
       if (this.slowT <= 0) this.slowScale = 1;
     }
     const sdt = dt * this.slowScale;
+    this.dt = sdt;   // the live rigs need the step they are being advanced by
 
     this.time += sdt;
     this.hitFlash = Math.max(0, this.hitFlash - dt * 2.4);
@@ -1711,6 +1717,7 @@ export class Game {
   }
 
   render() {
+    beginBeastFrame();
     const r = this.r;
     const ctx = r.ctx;
     const cam = r.camera;
