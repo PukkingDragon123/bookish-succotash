@@ -47,7 +47,7 @@ const GAITS = {
 };
 
 // How many screen pixels one beastiary unit is worth.
-const DETAIL = 3.3;
+const UNIT = 3.3;
 
 /** Feet, in the order the gait tables use them. */
 const FN = 0, FF = 1, HN = 2, HF = 3;
@@ -78,7 +78,7 @@ const FLASH = {
   earInner: '#ffffff',
 };
 
-function shadeHex(hex, amt) {
+function tint(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
   const up = amt >= 0;
   const a = Math.abs(amt);
@@ -98,7 +98,7 @@ function band(u, px, py, coat, belly) {
   const edge = (at, w) => (u > at - w && u < at + w) ? (chk ? 1 : 0) : (u > at ? 1 : 0);
   if (u < -0.86) return coat.hi || coat.light;
   if (edge(-0.56, 0.09) === 0) return coat.light;
-  if (u > 0.86) return shadeHex(belly, -0.18);
+  if (u > 0.86) return tint(belly, -0.18);
   if (edge(0.46, 0.10) === 1) return coat.dark;
   return coat.base;
 }
@@ -133,7 +133,7 @@ export class BeastRig {
     // The beastiary's numbers are in a small abstract unit the old baked art
     // multiplied up before drawing. Same factor here, so a bison comes out the
     // size a bison came out before and nothing else in the world has to move.
-    const s = (cfg.scale || 1) * DETAIL;
+    const s = (cfg.scale || 1) * UNIT;
     this.s = s;
 
     // --- skeleton, in local side-profile units. +x is forward, -y is up, and
@@ -499,7 +499,7 @@ export class BeastRig {
     const croup = spine[0];
 
     // --- far legs -------------------------------------------------------------
-    const farTone = shadeHex(coat.dark, -0.18);
+    const farTone = tint(coat.dark, -0.18);
     if (!this.biped) {
       this._leg(pb, FF, spine, farTone, true);
       this._leg(pb, HF, spine, farTone, true);
@@ -534,18 +534,18 @@ export class BeastRig {
   _barrel(pb, spine, coat) {
     let _c = '#000000';
     const pts = spine.map(p => ({ x: p.x, y: p.y, r: p.r, f: p.f }));
-    const belly = coat.belly || shadeHex(coat.dark, -0.1);
+    const belly = coat.belly || tint(coat.dark, -0.1);
     // One hard outline around the whole barrel, then the form inside it. The
     // bands are deliberately lopsided: a thin lit rim along the topline, most
     // of the animal in its base coat, and the underside sunk into shadow with
     // only a sliver of belly showing. Splitting it evenly top and bottom is
     // what made the first pass read as a painted plank.
-    tube(pb, pts, coat.base, 1.2, () => shadeHex(coat.dark, -0.62));
+    tube(pb, pts, coat.base, 1.2, () => tint(coat.dark, -0.62));
     tube(pb, pts, coat.base, 0, (f, u, px, py) => band(u, px, py, coat, belly));
     // shaggy ruff on the forequarter, for the ones that have one
     if (this.cfg.extras && this.cfg.extras.ruff) {
       const w = spine[spine.length - 1];
-      _c = shadeHex(coat.dark, -0.12);
+      _c = tint(coat.dark, -0.12);
       for (let i = 0; i < 7; i++) {
         const t = i / 6;
         blob(pb, w.x - t * this.bodyLen * 0.30, w.y + this._girth(1) * (0.35 + t * 0.5),
@@ -611,13 +611,13 @@ export class BeastRig {
     if (this.cfg.legs.foot === 'hoof') {
       // a hoof is a hard dark box, and it is the only truly black thing on
       // a deer — which is why it reads from across the basin
-      _c = shadeHex(tone, -0.62);
+      _c = tint(tone, -0.62);
       _rect(pb, Math.round(footX - w2), Math.round(footY - w2 * 1.4),
                    Math.max(2, Math.round(w2 * 2.1)), Math.max(2, Math.round(w2 * 1.5)), _c);
     } else {
-      _c = shadeHex(tone, -0.5);
+      _c = tint(tone, -0.5);
       blob(pb, footX + w2 * 0.35, footY - w2 * 0.5, w2 * 1.35, _c)
-      _c = shadeHex(tone, -0.2);
+      _c = tint(tone, -0.2);
       blob(pb, footX + w2 * 0.2, footY - w2 * 0.8, w2 * 0.9, _c)
     }
   }
@@ -640,10 +640,10 @@ export class BeastRig {
     const k = ik2(hx, hy, fx, fy, thigh, shank, -1);
     const w = this.legThick * 0.42;
 
-    _c = shadeHex(tone, -0.5);
+    _c = tint(tone, -0.5);
     taperSeg(pb, hx, hy, k.jx, k.jy, w * 1.5 + 0.8, w + 0.8, _c)
     taperSeg(pb, k.jx, k.jy, fx, fy, w + 0.8, w * 0.7 + 0.8, _c)
-    _c = this.cfg.extras.footColor || shadeHex(tone, 0.1);
+    _c = this.cfg.extras.footColor || tint(tone, 0.1);
     taperSeg(pb, hx, hy, k.jx, k.jy, w * 1.5, w, _c)
     taperSeg(pb, k.jx, k.jy, fx, fy, w, w * 0.7, _c)
     // three toes forward, one back
@@ -673,11 +673,11 @@ export class BeastRig {
         f: 0.5,
       });
     }
-    tube(pb, pts, coat.base, 1.1, () => shadeHex(coat.dark, -0.6));
+    tube(pb, pts, coat.base, 1.1, () => tint(coat.dark, -0.6));
     tube(pb, pts, coat.base, 0, (f, u) =>
-      (u < -0.35 ? (coat.hi || coat.light) : u > 0.35 ? shadeHex(coat.dark, -0.16) : coat.base));
+      (u < -0.35 ? (coat.hi || coat.light) : u > 0.35 ? tint(coat.dark, -0.16) : coat.base));
     // the primaries, as a few hard strokes off the trailing end
-    _c = shadeHex(coat.dark, -0.34);
+    _c = tint(coat.dark, -0.34);
     for (let i = 0; i < 3; i++) {
       const t = 0.62 + i * 0.13;
       const px2 = lerp(a.x, b.x - this.bodyLen * 0.16, t);
@@ -702,7 +702,7 @@ export class BeastRig {
       const bx = node.x, by = node.y - r * 0.78;
       const tx = bx + Math.cos(lean + Math.PI) * len * 0.55;
       const ty = by + Math.sin(lean + Math.PI) * len - len * 0.5;
-      _c = shadeHex(coat.dark, -0.6);
+      _c = tint(coat.dark, -0.6);
       taperSeg(pb, bx, by, tx, ty, 1.8, 1.0, _c)
       _c = i % 3 === 0 ? (coat.hi || coat.light) : coat.base;
       taperSeg(pb, bx, by, tx, ty, 1.2, 0.5, _c)
@@ -757,9 +757,9 @@ export class BeastRig {
       x += Math.cos(aa) * (len / n);
       y += Math.sin(aa) * (len / n);
     }
-    tube(pb, pts, coat.base, 1.2, () => shadeHex(coat.dark, -0.62));
+    tube(pb, pts, coat.base, 1.2, () => tint(coat.dark, -0.62));
     tube(pb, pts, coat.base, 0, (f, u) =>
-      (u < -0.5 ? coat.light : u > 0.5 ? shadeHex(coat.dark, -0.1) : coat.base));
+      (u < -0.5 ? coat.light : u > 0.5 ? tint(coat.dark, -0.1) : coat.base));
     if (coat.tailTip && st !== 'stub') {
       _c = coat.tailTip;
       blob(pb, pts[n].x, pts[n].y, Math.max(1.2, pts[n].r * 0.85), _c)
@@ -810,9 +810,9 @@ export class BeastRig {
         f: 0.28 - t * 0.24,
       });
     }
-    tube(pb, nPts, coat.base, 1.2, () => shadeHex(coat.dark, -0.62));
+    tube(pb, nPts, coat.base, 1.2, () => tint(coat.dark, -0.62));
     tube(pb, nPts, coat.base, 0, (f, u) =>
-      (u < -0.55 ? coat.light : u > 0.62 ? shadeHex(coat.dark, -0.1) : coat.base));
+      (u < -0.55 ? coat.light : u > 0.62 ? tint(coat.dark, -0.1) : coat.base));
 
     if (c.extras.bell) {
       // A moose's bell is a narrow flap of skin hanging off the throat, not
@@ -820,13 +820,13 @@ export class BeastRig {
       // swings.
       const bx0 = lerp(nx, px, 0.62), by0 = lerp(ny, py, 0.62) + this.neckThick * 1.0;
       const sway = Math.sin(this.tailPhase * 0.7) * this.neckThick * 0.18;
-      _c = shadeHex(coat.dark, -0.6);
+      _c = tint(coat.dark, -0.6);
       taperSeg(pb, bx0, by0, bx0 + sway, by0 + this.neckThick * 1.5, this.neckThick * 0.42 + 1, this.neckThick * 0.30 + 1, _c)
-      _c = shadeHex(coat.dark, -0.05);
+      _c = tint(coat.dark, -0.05);
       taperSeg(pb, bx0, by0, bx0 + sway, by0 + this.neckThick * 1.5, this.neckThick * 0.42, this.neckThick * 0.30, _c)
     }
     if (c.extras.mane) {
-      _c = shadeHex(coat.dark, -0.28);
+      _c = tint(coat.dark, -0.28);
       for (let i = 1; i <= 4; i++) {
         const t = i / 5;
         blob(pb, lerp(nx, px, t) + Math.cos(ang + Math.PI / 2) * this.neckThick * 0.8,
@@ -855,19 +855,19 @@ export class BeastRig {
       { x: lerp(sx, mx, 0.55), y: lerp(sy, my, 0.55), r: lerp(this.headR, this.muzzleH, blunt ? 0.45 : 0.72), f: 0.03 },
       { x: mx, y: my, r: Math.max(1.2, this.muzzleH * (blunt ? 1.30 : 0.90)), f: 0 },
     ];
-    tube(pb, hPts, coat.base, 1.2, () => shadeHex(coat.dark, -0.62));
+    tube(pb, hPts, coat.base, 1.2, () => tint(coat.dark, -0.62));
     tube(pb, hPts, coat.base, 0, (f, u) =>
-      (u < -0.5 ? coat.light : u > 0.62 ? shadeHex(coat.dark, -0.08) : coat.base));
+      (u < -0.5 ? coat.light : u > 0.62 ? tint(coat.dark, -0.08) : coat.base));
 
     // the jaw, hanging under the back half of the muzzle — this is what stops
     // a head reading as a cone
-    _c = shadeHex(coat.dark, -0.6);
+    _c = tint(coat.dark, -0.6);
     taperSeg(pb, sx + fx * this.headR * 0.25 - fy * this.headR * 0.42,
                   sy + fy * this.headR * 0.25 + fx * this.headR * 0.42,
                   lerp(sx, mx, 0.82) - fy * this.muzzleH * 0.45,
                   lerp(sy, my, 0.82) + fx * this.muzzleH * 0.45,
                   this.headR * 0.30 + 1, this.muzzleH * 0.38 + 1, _c)
-    _c = shadeHex(coat.dark, -0.05);
+    _c = tint(coat.dark, -0.05);
     taperSeg(pb, sx + fx * this.headR * 0.25 - fy * this.headR * 0.42,
                   sy + fy * this.headR * 0.25 + fx * this.headR * 0.42,
                   lerp(sx, mx, 0.82) - fy * this.muzzleH * 0.45,
@@ -886,17 +886,17 @@ export class BeastRig {
     const ey = sy + fy * this.headR * 0.34 + fx * this.headR * 0.40;
     const er = Math.max(0.8, c.eye.r * this.s * 0.26);
     if (this.blink > 0) {
-      _c = shadeHex(coat.dark, -0.45);
+      _c = tint(coat.dark, -0.45);
       _rect(pb, Math.round(ex - er), Math.round(ey), Math.max(2, Math.round(er * 2.2)), 1, _c);
     } else {
       // A dark socket with the iris inside it, not a coloured lamp. Amber
       // eyes belong to the wolf, but at this size a full amber disc is the
       // only thing you see on the whole animal.
-      _c = shadeHex(coat.dark, -0.72);
+      _c = tint(coat.dark, -0.72);
       blob(pb, ex, ey, er + 1, _c)
       _c = c.eye.color;
       blob(pb, ex, ey, er, _c)
-      _c = shadeHex(coat.dark, -0.8);
+      _c = tint(coat.dark, -0.8);
       blob(pb, ex + 0.2, ey + 0.2, er * 0.5, _c)
     }
   }
@@ -912,17 +912,17 @@ export class BeastRig {
     const up = -1.28 - this.alarm * 0.28 + flick + (e.tilt || 0);
     const fx = Math.cos(face), fy = Math.sin(face);
     // far ear first, darker and set back, so the near one reads in front of it
-    for (const [side, tone, back] of [[-1, shadeHex(coat.dark, -0.26), 1.6], [1, coat.base, 0]]) {
+    for (const [side, tone, back] of [[-1, tint(coat.dark, -0.26), 1.6], [1, coat.base, 0]]) {
       const bx = sx - fx * (this.headR * 0.62 + back);
       const by = sy - fy * (this.headR * 0.62 + back) - back * 0.35;
       const a = face + up + side * 0.16;
       const tipX = bx + Math.cos(a) * size, tipY = by + Math.sin(a) * size;
-      _c = shadeHex(tone, -0.6);
+      _c = tint(tone, -0.6);
       taperSeg(pb, bx, by, tipX, tipY, size * 0.42 + 1, 1.2, _c)
       _c = tone;
       taperSeg(pb, bx, by, tipX, tipY, size * 0.36, 0.6, _c)
       if (side > 0 && e.style !== 'tiny') {
-        _c = coat.earInner || shadeHex(coat.base, 0.22);
+        _c = coat.earInner || tint(coat.base, 0.22);
         taperSeg(pb, lerp(bx, tipX, 0.3), lerp(by, tipY, 0.3),
                  lerp(bx, tipX, 0.76), lerp(by, tipY, 0.76), size * 0.17, 0.5, _c)
       }
@@ -938,7 +938,7 @@ export class BeastRig {
       for (const side of [-1, 1]) {
         const bx = px - Math.cos(face) * this.headR * 0.2 + side * 0.6;
         const by = py - Math.sin(face) * this.headR * 0.9 - Math.abs(side) * 0.4;
-        _c = side < 0 ? shadeHex(col, -0.3) : col;
+        _c = side < 0 ? tint(col, -0.3) : col;
         // short, up and forward, hooking in
         taperSeg(pb, bx, by, bx + Math.cos(face - 1.5) * 3.4 * s, by + Math.sin(face - 1.5) * 3.4 * s, 1.5 * s, 0.9 * s, _c)
         taperSeg(pb, bx + Math.cos(face - 1.5) * 3.4 * s, by + Math.sin(face - 1.5) * 3.4 * s,
@@ -946,7 +946,7 @@ export class BeastRig {
       }
     } else if (x.horns === 'curl') {
       for (const side of [-1, 1]) {
-        _c = side < 0 ? shadeHex(col, -0.3) : col;
+        _c = side < 0 ? tint(col, -0.3) : col;
         // A ram's horn is a spiral, and a spiral only reads if the gap
         // between turns is wider than the horn is thick. Fatter links than
         // steps fused it into a solid disc.
@@ -963,7 +963,7 @@ export class BeastRig {
       }
     } else if (x.horns === 'prong') {
       for (const side of [-1, 1]) {
-        _c = side < 0 ? shadeHex(col, -0.35) : col;
+        _c = side < 0 ? tint(col, -0.35) : col;
         const bx = px - Math.cos(face) * this.headR * 0.25 + side * 0.5;
         const by = py - Math.sin(face) * this.headR * 0.85;
         const tx = bx + Math.cos(face - 1.45) * 5.2 * s, ty = by + Math.sin(face - 1.45) * 5.2 * s;
@@ -976,7 +976,7 @@ export class BeastRig {
       const style = x.antlers;
       const big = style === 'moose' ? 0.92 : style === 'elk' ? 0.95 : 0.68;
       for (const side of [-1, 1]) {
-        _c = side < 0 ? shadeHex(col, -0.32) : col;
+        _c = side < 0 ? tint(col, -0.32) : col;
         const bx = px - Math.cos(face) * this.headR * 0.35 + side * 0.7;
         const by = py - Math.sin(face) * this.headR * 0.9 - Math.abs(side) * 0.5;
         if (style === 'moose') {

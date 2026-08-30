@@ -13,6 +13,15 @@ import { clamp, dist2, TAU } from '../engine/math.js';
 import { treeFrames, plantFrames, rockSprite, propSprite } from '../art/flora.js';
 import { labProp } from '../art/lab.js';
 
+// The basin. Big enough that the far corner is a decision rather than a
+// detour: at 16px tiles this is about 12,000 by 9,500 world pixels, and
+// crossing it takes long enough that you plan the trip.
+//
+// These live here rather than in game.js because the campaign needs them to
+// build the world it flies over, and reaching back into game.js for them made
+// an import cycle that scope hoisting cannot order.
+export const FOREST_W = 760, FOREST_H = 620;
+
 export const CHUNK = 8;                 // tiles per chunk side
 export const CHUNK_PX = CHUNK * TS;
 

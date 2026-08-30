@@ -22,8 +22,7 @@ import { rnd, chance, pick } from '../engine/rng.js';
 import { particles } from '../engine/particles.js';
 import { audio } from '../engine/audio.js';
 import { TS, T } from '../world/tiles.js';
-import { World, CHUNK } from '../world/world.js';
-import { FOREST_W, FOREST_H } from '../game.js';
+import { World, CHUNK, FOREST_W, FOREST_H } from '../world/world.js';
 import { VIEW_W, VIEW_H } from '../engine/canvas.js';
 
 /** One notch lighter, for the lit crown of a tree seen from above. */

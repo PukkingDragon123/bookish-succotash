@@ -22,7 +22,7 @@ import { P } from './art/palette.js';
 import { itemIcon, warnMarkerFrames } from './art/items.js';
 import { nestLogoSprite } from './art/machines.js';
 
-import { World, worldObjectSprite } from './world/world.js';
+import { World, worldObjectSprite, FOREST_W, FOREST_H } from './world/world.js';
 import { FireSim } from './world/fire.js';
 import { TS, TILES, T, isWater, isSolid, drawWaterShimmer } from './world/tiles.js';
 
@@ -52,10 +52,6 @@ export const STATE = { TITLE: 'title', PLAY: 'play', PAUSED: 'paused', DEAD: 'de
 
 // The basin. Big enough that you can get properly lost in it and the far side
 // is a journey rather than a stroll.
-// The basin. Big enough that the far corner is a decision rather than a
-// detour: at 16px tiles this is about 12,000 by 9,500 world pixels, and
-// crossing it takes long enough that you plan the trip.
-export const FOREST_W = 760, FOREST_H = 620;
 
 export class Game {
   constructor(canvas, seed) {
