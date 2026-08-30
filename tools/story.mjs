@@ -188,6 +188,26 @@ while (Date.now() - tapT0 < 90000) {
 const gotCourse = await waitFor(s => s.chapter === 'course', 30000, 'course');
 check('cage chapter hands over to the course', gotCourse, (await snap()).chapter);
 
+// --- containment: the observation room, the tour, and the one who stayed ----
+const contain = await page.evaluate(() => {
+  const g = window.game, c = g.campaign;
+  if (!c) return { gone: true };
+  const m = c.marks || {};
+  return {
+    obsRoom: !!m.observation, seats: (m.obsSeats || []).length,
+    doors: (m.doors || []).length, visitor: !!m.visitor,
+    plantRoom: !!m.plantRoom, store: !!m.store,
+    vents: (m.vents || []).length,
+  };
+});
+check('the block has an observation room somebody watches you from',
+  contain.obsRoom && contain.seats >= 3, JSON.stringify(contain));
+check('there are card-locked doors and a badge to open them with',
+  contain.doors >= 2 && contain.visitor, 'doors ' + contain.doors);
+check('the plant room is reachable by duct, so the badge is not locked inside itself',
+  contain.vents >= 4 && contain.plantRoom, 'vents ' + contain.vents);
+
+
 // chapter 2: a sustained run is what tires you, so hold one direction first
 await page.keyboard.down('KeyD');
 await page.waitForTimeout(9000);
@@ -278,24 +298,6 @@ const chapters = await seen();
 const heli = heliSeen || chapters.includes('heli') || (await snap()).chapter === 'heli' ||
   await waitFor(s => s.chapter === 'heli', 20000);
 check('the rampage reaches the transport', heli, 'chapters seen: ' + chapters.join(' '));
-
-// --- containment: the observation room, the tour, and the one who stayed ----
-const contain = await page.evaluate(() => {
-  const g = window.game, c = g.campaign;
-  const m = c.marks || {};
-  return {
-    obsRoom: !!m.observation, seats: (m.obsSeats || []).length,
-    doors: (m.doors || []).length, visitor: !!m.visitor,
-    plantRoom: !!m.plantRoom, store: !!m.store,
-    vents: (m.vents || []).length,
-  };
-});
-check('the block has an observation room somebody watches you from',
-  contain.obsRoom && contain.seats >= 3, JSON.stringify(contain));
-check('there are card-locked doors and a badge to open them with',
-  contain.doors >= 2 && contain.visitor, 'doors ' + contain.doors);
-check('the plant room is reachable by duct, so the badge is not locked inside itself',
-  contain.vents >= 4 && contain.plantRoom, 'vents ' + contain.vents);
 
 // chapter 10: fly it
 const flying = await page.evaluate(() => {

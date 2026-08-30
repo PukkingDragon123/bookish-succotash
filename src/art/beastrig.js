@@ -150,9 +150,13 @@ export class BeastRig {
     this.headR = cfg.head.r * s * 0.60;
     this.muzzle = cfg.head.muzzle * s * 0.70;
     this.muzzleH = (cfg.head.muzzleH || cfg.head.r * 0.6) * s * 0.42;
-    this.tailLen = (cfg.tail.len || 4) * s * 0.62;
+    this.tailLen = (cfg.tail.len || 4) * s * (cfg.tail.style === 'stub' ? 0.34 : 0.62);
     this.tailThick = (cfg.tail.thick || 1) * s * 0.5;
     this.hump = (cfg.extras && cfg.extras.hump || 0) * s * 0.5;
+    // Some animals are highest at the rump, not the withers. It is the whole
+    // difference between a black bear and a grizzly, and it reads from a
+    // hundred metres away.
+    this.rump = (cfg.extras && cfg.extras.rump || 0) * s * 0.5;
     // The beastiary already said which of these are birds; the rig just never
     // read it. Two legs, a wing folded over the back and a beak instead of a
     // muzzle — a raven drawn on the quadruped path comes out as a small dog.
@@ -371,13 +375,20 @@ export class BeastRig {
       const x = lerp(0, this.bodyLen, t);
       // the back line: dips behind the withers, rises over the hump
       const sag = Math.sin(t * Math.PI) * this.bodyHgt * 0.10;
-      // A bison's hump is a long smooth swell peaking just behind the neck,
-      // not a lump: raised cosine over the front half of the back.
-      const hu = clamp((t - 0.22) / 0.66, 0, 1);
+      // A bison's hump sits over the SHOULDERS, not the middle of the back:
+      // a raised cosine peaking at t=0.78, just behind the withers, tapering
+      // to nothing by the last third of the barrel. Centring it mid-back is
+      // what makes a bison read as a camel.
+      const hu = clamp((t - 0.50) / 0.56, 0, 1);
       const humpY = this.hump * (0.5 - 0.5 * Math.cos(hu * TAU)) * (hu > 0 && hu < 1 ? 1 : 0);
+      // The rump swell is the same shape mirrored, peaking at t=0.18 over the
+      // hindquarters — a black bear's high point is its backside, which is
+      // most of what separates its silhouette from a bison's.
+      const ru = clamp((0.46 - t) / 0.56, 0, 1);
+      const rumpY = this.rump * (0.5 - 0.5 * Math.cos(ru * TAU)) * (ru > 0 && ru < 1 ? 1 : 0);
       const flex = Math.sin(t * Math.PI) * this.arch * this.bodyHgt;
       pts.push({
-        x, y: topY + sag - humpY + flex + this.bodyHgt * 0.5,
+        x, y: topY + sag - humpY - rumpY + flex + this.bodyHgt * 0.5,
         r: this._girth(t), f: 1 - t * 0.75,
       });
     }
@@ -614,6 +625,14 @@ export class BeastRig {
       _c = tint(tone, -0.62);
       _rect(pb, Math.round(footX - w2), Math.round(footY - w2 * 1.4),
                    Math.max(2, Math.round(w2 * 2.1)), Math.max(2, Math.round(w2 * 1.5)), _c);
+    } else if (this.cfg.legs.digitigrade === false && this.legThick > 4) {
+      // Plantigrade: the whole sole on the ground, heel and all. A bear
+      // standing on its toes is a dog, and the flat foot is half of why a
+      // bear looks heavy.
+      _c = tint(tone, -0.52);
+      taperSeg(pb, footX - w2 * 1.5, footY - w2 * 0.6, footX + w2 * 1.9, footY - w2 * 0.5, w2 * 0.95, w2 * 0.7, _c)
+      _c = tint(tone, -0.24);
+      taperSeg(pb, footX - w2 * 1.2, footY - w2 * 0.9, footX + w2 * 1.6, footY - w2 * 0.8, w2 * 0.6, w2 * 0.45, _c)
     } else {
       _c = tint(tone, -0.5);
       blob(pb, footX + w2 * 0.35, footY - w2 * 0.5, w2 * 1.35, _c)
@@ -736,10 +755,11 @@ export class BeastRig {
     // base angle: PI is straight back, larger is back-and-down
     const carry = st === 'plume' ? Math.PI + 0.55       // up and over the back
       : st === 'brush' ? Math.PI - 0.50                 // trailing, almost down
-      : st === 'stub' ? Math.PI - 0.22
+      : st === 'switch' ? Math.PI - 1.02                // a rope, hanging
+      : st === 'stub' ? Math.PI - 0.62                  // a nub, pointing down
       : Math.PI - 0.34;
     // negative curls it further toward the ground as it goes; a plume curls up
-    const droop = st === 'plume' ? 0.34 : -0.30;
+    const droop = st === 'plume' ? 0.34 : st === 'switch' ? 0.44 : -0.30;
     const a0 = carry + this.tailSwing * 0.28 + this.alarm * 0.30 + this.pitch * 0.4;
 
     const n = 6;
@@ -750,7 +770,9 @@ export class BeastRig {
       const r = st === 'plume' ? this.tailThick * (0.8 + Math.sin(t * Math.PI) * 3.0)
         : st === 'brush' ? this.tailThick * (1.1 + Math.sin(t * Math.PI) * 1.5)
         : st === 'bushy' ? this.tailThick * (1.0 + Math.sin(t * Math.PI) * 0.9)
-        : st === 'stub' ? this.tailThick * (1.2 - t * 0.7)
+        // a bison's switch: bare rope for four fifths, then the black tuft
+        : st === 'switch' ? this.tailThick * (t < 0.78 ? 0.9 - t * 0.2 : 2.6)
+        : st === 'stub' ? this.tailThick * (1.3 - t * 0.9)
         : this.tailThick * (1.0 - t * 0.5);
       pts.push({ x, y, r, f: 1 });
       const aa = a0 + droop * t * 1.6 + Math.sin(this.tailPhase + t * 2.4) * 0.18 * t;
@@ -758,8 +780,9 @@ export class BeastRig {
       y += Math.sin(aa) * (len / n);
     }
     tube(pb, pts, coat.base, 1.2, () => tint(coat.dark, -0.62));
+    const lit = st === 'stub' || st === 'switch' ? coat.base : coat.light;
     tube(pb, pts, coat.base, 0, (f, u) =>
-      (u < -0.5 ? coat.light : u > 0.5 ? tint(coat.dark, -0.1) : coat.base));
+      (u < -0.5 ? lit : u > 0.5 ? tint(coat.dark, -0.1) : coat.base));
     if (coat.tailTip && st !== 'stub') {
       _c = coat.tailTip;
       blob(pb, pts[n].x, pts[n].y, Math.max(1.2, pts[n].r * 0.85), _c)
@@ -789,7 +812,7 @@ export class BeastRig {
 
     // Neck carriage: steep for the long-necked, flat for the heavy-headed.
     // A bison's head hangs off the front of the hump; an elk's stands above it.
-    const carriage = this.hump > 0 ? 0.26 : -0.62 - c.neck.len * 0.055;
+    const carriage = this.hump > 0 ? 0.26 : this.rump > 0 ? 0.05 : -0.62 - c.neck.len * 0.055;
     const ang = carriage + this.headDrop * 1.30 - this.alarm * 0.30
       + this.headLead * 0.5 + this.pitch * 0.6;
 
@@ -917,12 +940,25 @@ export class BeastRig {
       const by = sy - fy * (this.headR * 0.62 + back) - back * 0.35;
       const a = face + up + side * 0.16;
       const tipX = bx + Math.cos(a) * size, tipY = by + Math.sin(a) * size;
+      if (e.style === 'round') {
+        // A bear's ear is a disc standing off the back of the skull, not a
+        // cone. Drawn as a rimmed circle centred at two thirds of the reach.
+        const cx = lerp(bx, tipX, 0.62), cy = lerp(by, tipY, 0.62);
+        _c = tint(tone, -0.62);
+        blob(pb, cx, cy, size * 0.60, _c)
+        _c = tone;
+        blob(pb, cx - fx * 0.6, cy - fy * 0.6, size * 0.44, _c)
+        if (side > 0) { _c = tint(coat.dark, -0.34); blob(pb, cx, cy + size * 0.10, size * 0.24, _c) }
+        continue;
+      }
       _c = tint(tone, -0.6);
       taperSeg(pb, bx, by, tipX, tipY, size * 0.42 + 1, 1.2, _c)
       _c = tone;
       taperSeg(pb, bx, by, tipX, tipY, size * 0.36, 0.6, _c)
+      // The inner ear is a shadow, not a highlight. Lighting it was what made
+      // every dark-coated animal look like it had a lamp behind its head.
       if (side > 0 && e.style !== 'tiny') {
-        _c = coat.earInner || tint(coat.base, 0.22);
+        _c = coat.earInner || tint(coat.dark, -0.18);
         taperSeg(pb, lerp(bx, tipX, 0.3), lerp(by, tipY, 0.3),
                  lerp(bx, tipX, 0.76), lerp(by, tipY, 0.76), size * 0.17, 0.5, _c)
       }
@@ -1028,7 +1064,7 @@ export class BeastRig {
 
     const w = this.bodyLen + this.neckLen + this.muzzle + this.tailLen * 0.7 + back + fwd;
     const h = this.legLen + this.bodyHgt + this.neckLen * 0.9 + this.headR * 2
-      + this.hump + Math.max(up, ears);
+      + Math.max(this.hump, this.rump) + Math.max(up, ears);
     return { w: Math.ceil(w), h: Math.ceil(h) };
   }
 }

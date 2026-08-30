@@ -593,6 +593,30 @@ export class World {
         drawTile(ctx, i * TS, j * TS, id, tx, ty, (dx, dy) => this.tileAt(tx + dx, ty + dy));
       }
     }
+
+    // --- sun and shade over the top ----------------------------------------
+    // Tiles alone give a flat field: every meadow tile is painted the same
+    // green, so a wide clearing reads as one sheet of colour no matter how
+    // much per-tile speckle is in it. This lays broad light over them from a
+    // slow fbm plus a finer one for canopy dapple. It is sampled in world
+    // space, so it runs continuously across chunk seams, and it is baked into
+    // the chunk, so it costs nothing per frame. Indoor tiles are skipped —
+    // the lab has its own lighting and does not get weather.
+    const BL = 4;
+    for (let by = 0; by < CHUNK_PX; by += BL) {
+      for (let bx = 0; bx < CHUNK_PX; bx += BL) {
+        const wx = cx * CHUNK_PX + bx + BL / 2, wy = cy * CHUNK_PX + by + BL / 2;
+        const t = TILES[this.tileAt((wx / TS) | 0, (wy / TS) | 0)];
+        if (!t || t.indoor) continue;
+        const v = (fbm(wx / 270, wy / 270, this.seed + 811, 3) - 0.5) * 0.78
+                + (fbm(wx / 76, wy / 76, this.seed + 812, 2) - 0.5) * 0.36;
+        if (v > 0.045) ctx.fillStyle = `rgba(255,246,205,${Math.min(0.075, (v - 0.045) * 0.46).toFixed(3)})`;
+        else if (v < -0.045) ctx.fillStyle = `rgba(10,20,15,${Math.min(0.095, (-v - 0.045) * 0.5).toFixed(3)})`;
+        else continue;
+        ctx.fillRect(bx, by, BL, BL);
+      }
+    }
+
     c = canvas;
     this.chunks.set(k, c);
     // keep the cache bounded; the player only ever sees a couple of dozen
