@@ -161,6 +161,11 @@ export class BeastRig {
     // read it. Two legs, a wing folded over the back and a beak instead of a
     // muzzle — a raven drawn on the quadruped path comes out as a small dog.
     this.biped = cfg.legs.count === 2;
+    // A quadruped's spine runs level between two pairs of legs. A bird's does
+    // not: its body hangs off one pair of hips, breast-high and tail-low. This
+    // is the angle it hangs at — steep for a crane standing upright, shallow
+    // for a corvid.
+    this.tilt = cfg.body.tilt != null ? cfg.body.tilt : (cfg.legs.count === 2 ? 0.30 : 0);
     this.wings = !!cfg.extras.wings;
 
     // How much the spine gives. A mustelid is a whip; a bison is a wall.
@@ -392,6 +397,18 @@ export class BeastRig {
         r: this._girth(t), f: 1 - t * 0.75,
       });
     }
+    if (this.tilt) {
+      // Rotated about the hip node rather than the centre, so the leg solve is
+      // untouched and the barrel, wing, tail and head all come along with it.
+      const p = 0.42 * (n - 1), i0 = Math.floor(p), i1 = Math.min(n - 1, i0 + 1), fr = p - i0;
+      const ox = lerp(pts[i0].x, pts[i1].x, fr), oy = lerp(pts[i0].y, pts[i1].y, fr);
+      const ca = Math.cos(-this.tilt), sa = Math.sin(-this.tilt);
+      for (const q of pts) {
+        const dx = q.x - ox, dy = q.y - oy;
+        q.x = ox + dx * ca - dy * sa;
+        q.y = oy + dx * sa + dy * ca;
+      }
+    }
     return pts;
   }
 
@@ -534,6 +551,7 @@ export class BeastRig {
 
     if (this.cfg.extras.spines) this._spines(pb, spine, coat);
     if (this.wings) this._wing(pb, spine, coat);
+    if (this.cfg.extras.bustle) this._bustle(pb, spine, coat);
     if (this.cfg.tail.style === 'plume') this._tail(pb, croup, coat);
 
     // --- neck and head --------------------------------------------------------
@@ -657,7 +675,7 @@ export class BeastRig {
     const thigh = this.legLen * 0.34;      // mostly buried in the feathers
     const shank = this.legLen * 0.72;
     const k = ik2(hx, hy, fx, fy, thigh, shank, -1);
-    const w = this.legThick * 0.42;
+    const w = this.legThick * 0.62;
 
     _c = tint(tone, -0.5);
     taperSeg(pb, hx, hy, k.jx, k.jy, w * 1.5 + 0.8, w + 0.8, _c)
@@ -702,6 +720,33 @@ export class BeastRig {
       const px2 = lerp(a.x, b.x - this.bodyLen * 0.16, t);
       const py2 = lerp(a.y, b.y + this._girth(0.10) * 0.62, t);
       taperSeg(pb, px2, py2, px2 - this.bodyLen * 0.14, py2 + 1.5 + i, 1.1, 0.6, _c)
+    }
+  }
+
+  /**
+   * The bustle: the drooping tertial feathers a crane carries over its tail.
+   *
+   * It is the one thing that tells a crane from a heron at a distance, and
+   * without it a long-legged grey bird is just a long-legged grey bird. Drawn
+   * as a short curtain of curved plumes falling off the rump.
+   */
+  _bustle(pb, spine, coat) {
+    let _c = '#000000';
+    const a = this._spineAt(spine, 0.28);
+    const g = this._girth(0.28);
+    const drop = this.bodyHgt * 0.62;
+    for (let i = 0; i < 5; i++) {
+      const t = i / 4;
+      const x0 = a.x - this.bodyLen * (0.02 + t * 0.20);
+      const y0 = a.y + g * (0.10 + t * 0.30);
+      const sway = Math.sin(this.tailPhase * 0.6 + t * 1.2) * 1.1;
+      const x1 = x0 - this.bodyLen * 0.30 + sway;
+      const y1 = y0 + drop * (0.55 + t * 0.45);
+      const w = g * (0.34 - t * 0.14) + 1;
+      _c = tint(coat.dark, -0.58);
+      taperSeg(pb, x0, y0, x1, y1, w + 1, 1.4, _c)
+      _c = i < 2 ? (coat.light || coat.base) : coat.base;
+      taperSeg(pb, x0, y0, x1, y1, w, 0.9, _c)
     }
   }
 
@@ -751,6 +796,7 @@ export class BeastRig {
   _tail(pb, croup, coat) {
     let _c = '#000000';
     const st = this.cfg.tail.style;
+    if (st === 'fan') { this._fanTail(pb, croup, coat); return; }
     const len = this.tailLen;
     // base angle: PI is straight back, larger is back-and-down
     const carry = st === 'plume' ? Math.PI + 0.55       // up and over the back
@@ -786,6 +832,41 @@ export class BeastRig {
     if (coat.tailTip && st !== 'stub') {
       _c = coat.tailTip;
       blob(pb, pts[n].x, pts[n].y, Math.max(1.2, pts[n].r * 0.85), _c)
+    }
+  }
+
+  /**
+   * A bird's tail: a graduated fan of separate rectrices, not a rope.
+   *
+   * The feathers all leave the same point and spread through a shallow arc,
+   * the middle pair longest, so a magpie's tail reads as the long stepped
+   * wedge that is most of what identifies it and a raven's as a short blunt
+   * fan. Drawn back to front so the near feathers overlap the far ones.
+   */
+  _fanTail(pb, croup, coat) {
+    let _c = '#000000';
+    const len = this.tailLen * 1.25;
+    const n = 7;
+    const spread = 0.30 + this.alarm * 0.16;      // fans out when startled
+    const base = Math.PI - 0.10 + this.tailSwing * 0.16 + this.pitch * 0.4;
+    const bx = croup.x - this._girth(0) * 0.30, by = croup.y - this._girth(0) * 0.10;
+    const w = Math.max(1.1, this.tailThick * 0.85);
+    for (let i = 0; i < n; i++) {
+      const u = (i / (n - 1)) * 2 - 1;             // -1 far edge .. +1 near edge
+      const a = base + u * spread;
+      // graduated: the central pair carry the length, the outer ones are short
+      const l = len * (1 - Math.abs(u) * 0.34);
+      const tx = bx + Math.cos(a) * l, ty = by + Math.sin(a) * l;
+      // the far half of the fan sits behind the body and is shaded for it
+      const lit = u < -0.2 ? tint(coat.dark, -0.22) : u > 0.45 ? (coat.light || coat.base) : coat.base;
+      _c = tint(coat.dark, -0.62);
+      taperSeg(pb, bx, by, tx, ty, w + 1, w * 0.5 + 1, _c)
+      _c = lit;
+      taperSeg(pb, bx, by, tx, ty, w, w * 0.5, _c)
+    }
+    if (coat.tailTip) {
+      _c = coat.tailTip;
+      blob(pb, bx + Math.cos(base) * len * 0.94, by + Math.sin(base) * len * 0.94, w, _c)
     }
   }
 
@@ -898,6 +979,13 @@ export class BeastRig {
                   this.headR * 0.30, this.muzzleH * 0.38, _c)
 
     this._headgear(pb, sx, sy, face, coat);
+    if (c.extras.crown && coat.accent) {
+      // A sandhill crane's bare red crown, on the forehead ahead of the eye.
+      _c = coat.accent;
+      blob(pb, sx + fx * this.headR * 0.42 - fy * this.headR * 0.52,
+               sy + fy * this.headR * 0.42 + fx * this.headR * 0.52,
+           Math.max(1.2, this.headR * 0.46), _c)
+    }
     this._ears(pb, sx, sy, face, coat);
 
     // nose and eye last: a face is where the reader looks first
@@ -1064,7 +1152,8 @@ export class BeastRig {
 
     const w = this.bodyLen + this.neckLen + this.muzzle + this.tailLen * 0.7 + back + fwd;
     const h = this.legLen + this.bodyHgt + this.neckLen * 0.9 + this.headR * 2
-      + Math.max(this.hump, this.rump) + Math.max(up, ears);
+      + Math.max(this.hump, this.rump) + Math.max(up, ears)
+      + this.bodyLen * Math.sin(this.tilt) * 0.62;
     return { w: Math.ceil(w), h: Math.ceil(h) };
   }
 }
