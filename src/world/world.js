@@ -456,7 +456,7 @@ export class World {
       id: nextNodeId++, type, def, x, y,
       hp: def.hp, maxHp: def.hp,
       alive: true, respawnAt: 0,
-      variant: Math.floor(hash2(Math.round(x), Math.round(y), 88) * 4),
+      variant: Math.floor(hash2(Math.round(x), Math.round(y), 88) * 10),
       shake: 0, burn: 0, burning: false, fallT: 0,
       r: def.r, objType: 'node',
     };

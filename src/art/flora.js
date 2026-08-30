@@ -17,7 +17,33 @@ export const TREE_BEND_FRAMES = SWAY_FRAMES;
 
 // --- trees -----------------------------------------------------------------
 
+/**
+ * Every conifer gets its own greens.
+ *
+ * A hillside of the same four sprites reads as wallpaper, however good the
+ * sprite is. Shifting each tree a little warmer or cooler and a little lighter
+ * or darker off its seed costs nothing — the frames are baked per variant
+ * anyway — and turns a repeating pattern back into a forest.
+ */
+function conifer(rng) {
+  const warm = (rng() - 0.5) * 0.14;      // toward olive / toward blue-green
+  const val = (rng() - 0.5) * 0.20;       // sunlit crown / shaded hollow
+  const tint = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.max(0, Math.min(255, Math.round(r * (1 + val + warm * 1.4))));
+    g = Math.max(0, Math.min(255, Math.round(g * (1 + val + warm * 0.3))));
+    b = Math.max(0, Math.min(255, Math.round(b * (1 + val - warm * 1.2))));
+    return `rgb(${r},${g},${b})`;
+  };
+  return {
+    pine: tint(P.pine), pineLight: tint(P.pineLight),
+    pineDark: tint(P.pineDark), spruce: tint(P.spruce),
+  };
+}
+
 function drawLodgepole(ctx, rng, sway, opts = {}) {
+  const C = conifer(rng);
   const W = ctx.canvas.width, H = ctx.canvas.height;
   const cx = W / 2, base = H - 1;
   const trunkH = opts.trunkH || Math.round(H * 0.34);
@@ -52,8 +78,8 @@ function drawLodgepole(ctx, rng, sway, opts = {}) {
     const y = topY + canopyH * f;
     const w = maxW * (0.22 + f * 0.78);
     const off = sway * (1 - f) * 1.6;
-    const dark = i % 2 === 0 ? P.pineDark : P.pine;
-    const lit = i % 2 === 0 ? P.pine : P.pineLight;
+    const dark = i % 2 === 0 ? C.pineDark : C.pine;
+    const lit = i % 2 === 0 ? C.pine : C.pineLight;
     // ragged tier edge: a run of small blobs rather than one clean triangle
     const blobs = Math.max(3, Math.round(w / 2.4));
     for (let b = 0; b < blobs; b++) {
@@ -71,7 +97,7 @@ function drawLodgepole(ctx, rng, sway, opts = {}) {
     }
   }
   // crown spike
-  taper(ctx, cx + sway * 1.8, topY - 2, cx + sway * 1.2, topY + 5, 0.6, 2.4, P.pineDark);
+  taper(ctx, cx + sway * 1.8, topY - 2, cx + sway * 1.2, topY + 5, 0.6, 2.4, C.pineDark);
   if (opts.snow) {
     for (let i = 0; i < 8; i++) {
       const a = rng() * TAU;
@@ -81,6 +107,7 @@ function drawLodgepole(ctx, rng, sway, opts = {}) {
 }
 
 function drawSpruce(ctx, rng, sway) {
+  const C = conifer(rng);
   const W = ctx.canvas.width, H = ctx.canvas.height;
   const cx = W / 2, base = H - 1;
   const trunkH = 8;
@@ -91,8 +118,8 @@ function drawSpruce(ctx, rng, sway) {
     const y = 3 + (base - trunkH + 3) * f;
     const w = W * 0.44 * (0.14 + f * 0.86);
     const off = sway * (1 - f) * 1.8;
-    tri(ctx, cx + off - w, y + 4, cx + off + w, y + 4, cx + off * 1.3, y - 3, i % 2 ? P.spruce : P.pineDark);
-    tri(ctx, cx + off - w * 0.6, y + 2.6, cx + off + w * 0.6, y + 2.6, cx + off * 1.3, y - 1.4, i % 2 ? P.pine : P.spruce);
+    tri(ctx, cx + off - w, y + 4, cx + off + w, y + 4, cx + off * 1.3, y - 3, i % 2 ? C.spruce : C.pineDark);
+    tri(ctx, cx + off - w * 0.6, y + 2.6, cx + off + w * 0.6, y + 2.6, cx + off * 1.3, y - 1.4, i % 2 ? C.pine : C.spruce);
   }
 }
 

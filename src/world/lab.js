@@ -253,6 +253,26 @@ export function buildLab(world, seed = 1) {
   I(pvx0 + 9, pvy0 + 3, 'terminal', 'read', 'READ THE PANEL', {
     text: 'PLANT ROOM 4 - ACCESS LOG\nIN  0851 VISITOR 0417\nOUT --:--\nDOOR CYCLED 1,206 TIMES FROM THE CORRIDOR SIDE.',
   });
+  // The way in is the duct, because the door is the whole point: he could not
+  // fit through this and you can, and that is the only reason the badge is
+  // still in here to be found.
+  VENT(pvx0 + 2, pvy0 + 2, 68, corrY0 + 2, 'service run to plant room 4');
+
+  // --- the store ------------------------------------------------------------
+  // A second red reader, so the badge keeps paying after it has let you out.
+  const stx0 = 46, sty0 = 40, stx1 = 58, sty1 = 48;
+  room(w, stx0, sty0, stx1, sty1, T.LAB_FLOOR);
+  doorway(w, 51, corrY1, 52, sty0, T.LAB_FLOOR);
+  CARDDOOR(51, sty0, true, 'CARD READER  -  RED', 'bonded store');
+  marks.store = { x: 52 * TS, y: 44 * TS };
+  P(stx0 + 2, sty0 + 2, 'labCrate');
+  P(stx0 + 5, sty0 + 2, 'labCrate');
+  P(stx1 - 3, sty1 - 2, 'specShelf');
+  I(stx0 + 3, sty1 - 2, 'locker', 'locker', 'FORCE THE LOCKER', { loot: 'ammo' });
+  I(stx0 + 7, sty1 - 2, 'locker', 'locker', 'FORCE THE LOCKER', { loot: 'meds' });
+  I(stx1 - 2, sty0 + 2, 'terminal', 'read', 'READ THE MANIFEST', {
+    text: 'BONDED STORE - CONTROLLED ITEMS\nSIGNED OUT BY V. VANE: 41 ITEMS.\nRETURNED: 0.\nTHIS IS A REMINDER, NOT AN ACCUSATION. - STORES',
+  });
 
   // --- surgery ------------------------------------------------------------
   const sx0 = 10, sy0 = 42, sx1 = 40, sy1 = 62;

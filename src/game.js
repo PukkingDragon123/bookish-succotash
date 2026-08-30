@@ -1809,6 +1809,18 @@ export class Game {
         if (pr.kind === 'forge' && cam.visible(pr.x, pr.y, 60)) r.light(pr.x, pr.y - 6, 60, 'rgba(255,160,80,0.8)', 0.7);
       }
     }
+    // A vignette, faint enough to read as falloff rather than as a filter. It
+    // does the job a lens does: pulls the eye to the middle of the frame and
+    // stops the corners competing with the thing you are aiming at.
+    if (!lab) {
+      const vg = ctx.createRadialGradient(
+        VIEW_W / 2, VIEW_H / 2, Math.min(VIEW_W, VIEW_H) * 0.36,
+        VIEW_W / 2, VIEW_H / 2, Math.max(VIEW_W, VIEW_H) * 0.78);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(6,10,8,0.34)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
     this.bullets.drawGlow(r);
     r.endWorld();
 
@@ -1857,8 +1869,11 @@ export class Game {
     }
     const n = this.nightFactor;
     const fire = this.fire.intensity;
-    if (n < 0.03 && fire < 0.03) return null;      // full daylight: skip the pass
-    const dayR = 255, dayG = 255, dayB = 255;
+    // Daylight used to skip the grading pass entirely, and a scene with no
+    // grade at all is exactly what "flat" looks like — every pixel arriving at
+    // its painted value with nothing tying them together. Even at noon the
+    // basin gets a warm key, so there is a time of day in the picture.
+    const dayR = 255, dayG = 248, dayB = 226;
     const nightR = 92, nightG = 108, nightB = 150;
     let rr = lerp(dayR, nightR, n);
     let gg = lerp(dayG, nightG, n);

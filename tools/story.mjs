@@ -279,7 +279,32 @@ const heli = heliSeen || chapters.includes('heli') || (await snap()).chapter ===
   await waitFor(s => s.chapter === 'heli', 20000);
 check('the rampage reaches the transport', heli, 'chapters seen: ' + chapters.join(' '));
 
+// --- containment: the observation room, the tour, and the one who stayed ----
+const contain = await page.evaluate(() => {
+  const g = window.game, c = g.campaign;
+  const m = c.marks || {};
+  return {
+    obsRoom: !!m.observation, seats: (m.obsSeats || []).length,
+    doors: (m.doors || []).length, visitor: !!m.visitor,
+    plantRoom: !!m.plantRoom, store: !!m.store,
+    vents: (m.vents || []).length,
+  };
+});
+check('the block has an observation room somebody watches you from',
+  contain.obsRoom && contain.seats >= 3, JSON.stringify(contain));
+check('there are card-locked doors and a badge to open them with',
+  contain.doors >= 2 && contain.visitor, 'doors ' + contain.doors);
+check('the plant room is reachable by duct, so the badge is not locked inside itself',
+  contain.vents >= 4 && contain.plantRoom, 'vents ' + contain.vents);
+
 // chapter 10: fly it
+const flying = await page.evaluate(() => {
+  const c = window.game.campaign;
+  return { hasWorld: !!c.flyWorld, w: c.flyWorld ? c.flyWorld.w : 0 };
+});
+check('the flight is over the real basin, not a stand-in',
+  flying.hasWorld && flying.w >= 300, 'fly world ' + flying.w);
+
 const flown = await waitFor(s => s.chapter === 'done' || s.mode === 'forest', 60000);
 check('the flight ends in a crash', flown, (await snap()).chapter);
 const landed = await waitFor(s => s.mode === 'forest', 30000);

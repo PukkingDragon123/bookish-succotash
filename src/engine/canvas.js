@@ -312,12 +312,26 @@ export class Renderer {
   }
 
   // Soft elliptical contact shadow under an entity.
+  /**
+   * A contact shadow.
+   *
+   * Two ellipses rather than one: a wide soft pool that says roughly where the
+   * mass is, and a tight dark core right under the feet. A single flat ellipse
+   * reads as a decal stuck to the ground; the core is what actually makes a
+   * thing look like it is standing ON the grass rather than hovering above it.
+   */
   shadow(wx, wy, rx, ry = null, alpha = 0.28) {
     const c = this.ctx;
-    c.globalAlpha = alpha;
+    const sx = snap(wx - this.camera.ox), sy = snap(wy - this.camera.oy);
+    const RX = Math.round(rx), RY = Math.round(ry == null ? rx * 0.45 : ry);
     c.fillStyle = '#000';
+    c.globalAlpha = alpha * 0.42;
     c.beginPath();
-    c.ellipse(snap(wx - this.camera.ox), snap(wy - this.camera.oy), Math.round(rx), Math.round(ry == null ? rx * 0.45 : ry), 0, 0, Math.PI * 2);
+    c.ellipse(sx, sy, RX + 2, RY + 1, 0, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha = alpha;
+    c.beginPath();
+    c.ellipse(sx, sy, Math.max(1, Math.round(RX * 0.62)), Math.max(1, Math.round(RY * 0.62)), 0, 0, Math.PI * 2);
     c.fill();
     c.globalAlpha = 1;
   }
