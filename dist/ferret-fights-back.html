@@ -685,7 +685,7 @@ const T = {
   ASH: 17, CHARRED: 18, SNOW: 19, OBSIDIAN: 20, MAT_RUST: 21, SPRING_DEEP: 22,
   // Les Nest interiors
   LAB_FLOOR: 23, LAB_DARK: 24, LAB_WALL: 25, LAB_GLASS: 26,
-  LAB_GRATE: 27, LAB_TEAL: 28, LAB_BLOOD: 29, LAB_PAD: 30,
+  LAB_GRATE: 27, LAB_TEAL: 28, LAB_BLOOD: 29, LAB_PAD: 30, LAB_WET: 31,
 };
 
 const TILES = [];
@@ -726,6 +726,10 @@ def(T.LAB_TEAL,  { name: 'company floor', base: '#17403e', light: '#22605c', dar
 // baked into the panel grid, or every tile edge comes out as a red line.
 def(T.LAB_BLOOD, { name: 'floor', base: '#3f4a4c', light: '#4e5a5c', dark: '#2f383a', indoor: true, bloody: true });
 def(T.LAB_PAD,   { name: 'helipad', base: '#37403f', light: '#c9a23c', dark: '#232a2a', indoor: true });
+// The coolant channel that runs through the middle of the course. Ankle deep,
+// freezing, and the only thing in the building that is honest about what it is
+// for: it is there to slow you down while they time you.
+def(T.LAB_WET,   { name: 'coolant channel', base: '#1d4a52', light: '#2f7681', dark: '#123338', speed: 0.52, indoor: true });
 
 const isWater = (t) => TILES[t].water;
 const isSolid = (t) => TILES[t].solid;
@@ -889,6 +893,18 @@ function drawTile(ctx, px, py, id, tx, ty, nb) {
       }
       break;
     }
+    case T.LAB_WET: {
+      // grate bars showing through, plus a couple of surface glints
+      ctx.fillStyle = t.dark;
+      for (let i = 1; i < TS; i += 4) ctx.fillRect(px, py + i, TS, 1);
+      ctx.fillStyle = t.light;
+      for (let i = 0; i < 3; i++) {
+        const x = px + Math.floor(hash2(tx * 7 + i, ty * 13, 36) * (TS - 5));
+        const y = py + Math.floor(hash2(tx * 3, ty * 11 + i, 37) * TS);
+        ctx.fillRect(x, y, 4, 1);
+      }
+      break;
+    }
     case T.SPRING:
     case T.SPRING_DEEP:
     case T.WATER:
@@ -992,6 +1008,40 @@ function drawTile(ctx, px, py, id, tx, ty, nb) {
       break;
     }
     default: break;
+  }
+
+  // --- shoreline ----------------------------------------------------------
+  //
+  // The edge blender below deliberately refuses to bleed water into land, so
+  // without this a lake is a stack of hard stair-steps. A water tile that
+  // touches dry ground instead grows a shallow band along that side: wet sand
+  // first, then a broken line of foam, both chewed up by a hash so the
+  // staircase stops reading as a staircase.
+  if (nb && t.water && !t.indoor) {
+    const edges = [[0, -1, 1, 0], [0, 1, 1, 0], [-1, 0, 0, 1], [1, 0, 0, 1]];
+    for (const [dx, dy, ax, ay] of edges) {
+      const other = nb(dx, dy);
+      if (other == null) continue;
+      const ot = TILES[other];
+      if (!ot || ot.water) continue;
+      const ex = dx > 0 ? TS - 1 : 0, ey = dy > 0 ? TS - 1 : 0;
+      for (let d = 0; d < 4; d++) {
+        for (let k = 0; k < TS; k++) {
+          const gx = px + ex + ax * k - (dx ? dx * d : 0);
+          const gy = py + ey + ay * k - (dy ? dy * d : 0);
+          const n = hash2(gx, gy, 93);
+          // band 0-1 is wet ground, 2-3 is the foam line breaking up
+          if (d < 2) {
+            if (n > 0.24 + d * 0.30) continue;
+            ctx.fillStyle = d === 0 ? shade(ot.base, -0.10) : shade(ot.base, -0.24);
+          } else {
+            if (n > 0.40 - (d - 2) * 0.22) continue;
+            ctx.fillStyle = d === 2 ? P.waterFoam : t.light;
+          }
+          ctx.fillRect(gx, gy, 1, 1);
+        }
+      }
+    }
   }
 
   // --- edge blending ------------------------------------------------------
@@ -8184,6 +8234,42 @@ class World {
         ctx.fillRect(bx, by, BL, BL);
       }
     }
+
+    // --- canopy shade --------------------------------------------------------
+    //
+    // A tree that only has a contact shadow under its trunk is a tree standing
+    // on a lawn. Real forest floor is dark because there is a canopy over it,
+    // so every tree lays a wide soft pool on the ground here, at bake time,
+    // where it costs nothing per frame. Read out of the spatial hash rather
+    // than by walking every node in the basin.
+    const cs = this.cellSize;
+    const px0 = cx * CHUNK_PX, py0 = cy * CHUNK_PX;
+    const pad = 40;
+    const gx0 = ((px0 - pad) / cs) | 0, gx1 = ((px0 + CHUNK_PX + pad) / cs) | 0;
+    const gy0 = ((py0 - pad) / cs) | 0, gy1 = ((py0 + CHUNK_PX + pad) / cs) | 0;
+    ctx.save();
+    ctx.translate(-px0, -py0);
+    for (let gy = gy0; gy <= gy1; gy++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const arr = this.grid.get(gx + ',' + gy);
+        if (!arr) continue;
+        for (const o of arr) {
+          if (o.objType !== 'node' || !o.def || o.def.art !== 'tree') continue;
+          if (TILES[this.tileAtPx(o.x, o.y)].indoor) continue;
+          const rr = (o.def.r || 6) * 3.4;
+          const cyy = o.y - rr * 0.16;
+          const gr = ctx.createRadialGradient(o.x, cyy, 0, o.x, cyy, rr);
+          gr.addColorStop(0, 'rgba(9,20,14,0.30)');
+          gr.addColorStop(0.55, 'rgba(9,20,14,0.17)');
+          gr.addColorStop(1, 'rgba(9,20,14,0)');
+          ctx.fillStyle = gr;
+          ctx.beginPath();
+          ctx.ellipse(o.x, cyy, rr, rr * 0.72, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
 
     c = canvas;
     this.chunks.set(k, c);
@@ -18726,34 +18812,104 @@ function buildLab(world, seed = 1) {
   VENT(hx0 + 2, cageY + 4, 20, 34, 'block C to the service run');
 
   // --- the course ---------------------------------------------------------
-  // A testing maze east of the block. You run it for food, and it is tiring.
-  const cx0 = 46, cy0 = 6, cx1 = 88, cy1 = 30;
+  //
+  // Not a corridor with six doorways in it. Five sections, each testing a
+  // different thing, laid west to east: weave, shock plates, shutters, the
+  // coolant channel, and the sweep arms. Every section has a slow way through
+  // that is always open and a fast way through that will hurt you, because the
+  // whole exercise is Vane finding out which one you take when you are hungry.
+  //
+  // Nothing in here can kill you. It costs you the one currency the chapter
+  // actually runs on, which is how tired you are.
+  const cx0 = 46, cy0 = 6, cx1 = 93, cy1 = 30;
   room(w, cx0, cy0, cx1, cy1, T.LAB_TEAL);
   doorway(w, hx1, cageY - 1, cx0, cageY + 1, T.LAB_FLOOR);
   marks.courseStart = { x: (cx0 + 3) * TS, y: cageY * TS };
+  const iy0 = cy0 + 1, iy1 = cy1 - 1;                  // walkable rows
 
-  // baffles to weave through
   const gates = [];
-  for (let i = 0; i < 6; i++) {
-    const gx = cx0 + 5 + i * 6;
-    const gapY = cy0 + 4 + ((i * 7) % 14);
-    for (let ty = cy0 + 1; ty <= cy1 - 1; ty++) {
-      if (Math.abs(ty - gapY) <= 2) continue;
+  const gate = (gx, gapY) => gates.push({ x: gx * TS, y: gapY * TS });
+  // A baffle with a gap in it. Nothing else in the course is ever fully solid.
+  const baffle = (gx, gapY, half = 2) => {
+    for (let ty = iy0; ty <= iy1; ty++) {
+      if (Math.abs(ty - gapY) <= half) continue;
       w.tiles[w.idx(gx, ty)] = T.LAB_WALL;
     }
-    P(gx + 1, gapY + 3, 'hurdle');
-    gates.push({ x: gx * TS, y: gapY * TS });
+  };
+
+  // --- 1. the weave: gaps that alternate top and bottom -------------------
+  const weave = [[50, 9], [53, 25], [56, 11], [59, 24]];
+  for (const [gx, gy] of weave) {
+    baffle(gx, gy);
+    P(gx + 1, gy + 3, 'hurdle');
+    P(gx + 1, gy - 3, 'hurdle');
+    gate(gx, gy);
   }
+  // --- 2. the shock plates ------------------------------------------------
+  //
+  // Four columns of floor panels that go live on a cycle. They are laid so
+  // that at any moment there is a way through — you just have to read it while
+  // you are running, and the alternative is to stand still and be timed for it.
+  marks.plates = [];
+  for (let c = 0; c < 4; c++) {
+    const px2 = 59 + c * 3;
+    // Four blocks with a clear lane between each, so there is a way through
+    // even with every plate live — the alternating phase just makes the short
+    // way through open and shut while you are looking at it.
+    for (let k = 0; k < 4; k++) {
+      const py2 = iy0 + 1 + k * 6;
+      marks.plates.push({ tx: px2, ty: py2, w: 2, h: 3, phase: (c * 0.27 + k * 0.5) % 1 });
+    }
+  }
+  gate(64, 18);
+
+  // --- 3. the shutters ----------------------------------------------------
+  //
+  // Slam down across the top two thirds on a cycle. The bottom third is never
+  // blocked, so there is always a route — it is just the long one, and it has
+  // hurdles in it.
+  marks.shutters = [];
+  for (let i = 0; i < 3; i++) {
+    const sx = 72 + i * 4;
+    marks.shutters.push({ tx: sx, y0: iy0, y1: iy1 - 8, phase: i * 0.33, open: true });
+    for (let ty = iy1 - 7; ty <= iy1; ty++) w.tiles[w.idx(sx, ty)] = T.LAB_TEAL;
+    P(sx + 1, iy1 - 2, 'hurdle');
+  }
+  gate(76, 12);
+
+  // --- 4. the coolant channel ---------------------------------------------
+  // Ankle deep and freezing, with posts in it to break your line.
+  for (let ty = iy0; ty <= iy1; ty++) {
+    for (let tx = 82; tx <= 86; tx++) w.tiles[w.idx(tx, ty)] = T.LAB_WET;
+  }
+  for (let i = 0; i < 7; i++) {
+    const ptx = 83 + (i % 3) * 2, pty = iy0 + 1 + i * 3;
+    if (pty > iy1 - 1) continue;
+    w.tiles[w.idx(ptx, pty)] = T.LAB_WALL;
+  }
+  gate(84, 18);
+
+  // --- 5. the sweep arms --------------------------------------------------
+  // Two bars on a hinge, tracking up and down the last straight. Walk into one
+  // and it puts you on the floor; it does not stop you finishing.
+  marks.sweeps = [
+    { x: 88 * TS, y0: (iy0 + 1) * TS, y1: (iy1 - 1) * TS, len: 40, phase: 0, speed: 0.62 },
+    { x: 90 * TS, y0: (iy0 + 1) * TS, y1: (iy1 - 1) * TS, len: 40, phase: 0.5, speed: 0.48 },
+  ];
+
   marks.gates = gates;
   // the dish at the far end: the entire point of the exercise
-  const dishX = cx1 - 3, dishY = Math.floor((cy0 + cy1) / 2);
+  const dishX = cx1 - 1, dishY = Math.floor((cy0 + cy1) / 2);
   P(dishX, dishY, 'dish');
   marks.dish = { x: dishX * TS + TS / 2, y: dishY * TS + TS / 2 };
   // the gallery: they watch this from behind glass and write it down
-  for (let i = 0; i < 4; i++) P(cx0 + 6 + i * 8, cy0 + 1, 'terminal');
+  for (let i = 0; i < 5; i++) P(cx0 + 6 + i * 8, cy0 + 1, 'terminal');
   P(cx0 + 2, cy0 + 2, 'signWay');
   P(cx1 - 2, cy1 - 3, 'drain');
   P(cx0 + 14, cy1 - 2, 'drain');
+  P(60, cy1 - 2, 'signHazard');
+  P(74, cy0 + 2, 'signHazard');
+  P(83, cy1 - 2, 'drain');
   I(cx0 + 3, cy1 - 3, 'terminal', 'read', 'READ THE TERMINAL', {
     text: 'COURSE TIMES, SUBJECT 41\nDAY 604: 41s.  DAY 607: 38s.  DAY 610: 36s.\nDAY 611: 51s. WITHHELD FOOD. DAY 612: PENDING.',
   });
@@ -20632,6 +20788,8 @@ class Campaign {
     if (key === 'DAX') return this.dax && !this.dax.dead ? this.dax : null;
     if (key === 'VANE') return this.vane;
     if (key === 'GUARD') return this.guard || this.guardEnemy;
+    // the bubble should come from whoever in the gallery actually said it
+    if (key === 'OBSERVER') return (this.observers || []).find((o) => !o.dead) || null;
     if (key === 'SUBJECT 41') return game.player;
     if (key.startsWith('VANE')) return this.vane;
     return null;
@@ -20774,12 +20932,14 @@ class Campaign {
       beat.wait(0.9),
       beat.sfx('metal', 0.45),
       beat.wait(0.7),
-      beat.do((game) => { this.spawnVane(game); game.r.camera.follow(this.marks.cage.x + 60, this.marks.cage.y); }),
+      beat.do((game) => { this.spawnVane(game); game.r.camera.follow(this.marks.cage.x + 60, this.marks.cage.y + 40); }),
       beat.wait(3.2),
-      beat.do((game) => { game.r.camera.follow(this.vane.x - 14, this.vane.y - 10); }),
+      // hold on the pane with the two of you either side of it
+      beat.do((game) => { game.r.camera.follow(this.marks.cage.x + 44, this.marks.cage.y - 6); }),
       beat.wait(1),
 
       beat.say('VANE', "Forty-one.", 2, P.nestEye),
+      beat.say('VANE', "No, I am not coming in. I have never once been in one of these rooms.", 4.4, P.nestEye),
       beat.say('VANE', "Do you know that you are the only one of these that has ever looked back at me?", 4.6, P.nestEye),
       beat.say('VANE', "Six hundred and twelve days. Four hundred of them with my eye in your head.", 4.6, P.nestEye),
       beat.do((game) => { game.hitFlash = Math.max(game.hitFlash, 0.35); audio.play('chip', { vol: 0.7 }); }),
@@ -20899,12 +21059,29 @@ class Campaign {
     if (this.tourPhase === 'in' && this.tourT > 7) {
       this.tourPhase = 'look';
       this.tourT = 0;
+      this.tourLine = 0;
       for (const a of this.tour) { a.target = null; a.anim = 'idle'; a.facing = -1; }
-      game.dialogue.showFloating(this.tour[0], 'Block C. Forty-one is the one with the eye.', 3.4);
-    } else if (this.tourPhase === 'look' && this.tourT > 5.5) {
-      game.dialogue.showFloating(this.tour[2], 'Does it know we are here?', 2.8);
     }
-    if (this.tourPhase === 'look' && this.tourT > 9) {
+    // The worst thing in the room is not Vane. It is four people being polite
+    // about you in the middle of a working day: one of them asks the human
+    // question, and the guide answers it in company language without pausing.
+    if (this.tourPhase === 'look') {
+      const script = [
+        [0.4, 0, 'Block C. Forty-one is the one with the eye.', 3.4],
+        [4.0, 2, 'Does it know we are here?', 2.8],
+        [7.0, 0, 'It has no way to form that. There is nothing behind it.', 3.6],
+        [10.6, 3, "It's looking right at me though.", 2.8],
+        [13.6, 0, 'They track movement. Please do not tap the glass.', 3.4],
+        [17.0, 1, 'And the gap in the fur, that is where you—', 2.6],
+        [19.6, 0, 'Six hundred and twelve days, and every figure inside tolerance.', 3.8],
+      ];
+      while (this.tourLine < script.length && this.tourT > script[this.tourLine][0]) {
+        const [, who, text, dur] = script[this.tourLine++];
+        const a = this.tour[who];
+        if (a) game.dialogue.showFloating(a, text, dur);
+      }
+    }
+    if (this.tourPhase === 'look' && this.tourT > 23.5) {
       this.tourPhase = 'out';
       this.tourT = 0;
       // The fourth one hangs back. Nobody notices, because nobody is counting
@@ -20935,10 +21112,17 @@ class Campaign {
 
   spawnVane(game) {
     const m = this.marks.cage;
-    this.vane = new Actor('prop', 'chair', m.x + 150, m.y - 34, { name: 'Vane', key: 'vane', prop: 'chair' });
+    // He does not come in. That is the whole point of him: the tank is sealed
+    // for this entire scene, and he says all of it through a pane you have
+    // already been told you cannot break. He rolls up the service gap between
+    // your tank and Dax's and stops short of the glass — close enough to read
+    // the label on your ear, outside the box the whole time.
+    const gapX = m.x + 66;                       // the corridor between the tanks
+    this.vane = new Actor('prop', 'chair', gapX, m.y + 150, { name: 'Vane', key: 'vane', prop: 'chair' });
     this.vane.propKindTalk = 'chairTalk';
+    this.vane.facing = -1;
     this.actors.push(this.vane);
-    this.vane.moveTo(m.x + 44, m.y - 12, 22);
+    this.vane.moveTo(gapX, m.y - 12, 26);
     this.vaneHere = true;
     audio.setIntensity(0);
   }
@@ -20975,6 +21159,113 @@ class Campaign {
     if (first) this.game.toast('WASD / LEFT THUMB TO MOVE  -  SPACE TO DASH', P.uiDim, 7);
     for (const g2 of this.marks.gates) g2.passed = false;
     this.courseDone = false;
+    this.hazT = 0;
+    this.stagger = 0;
+    this.zapT = 0;
+    for (const pl of (this.marks.plates || [])) pl.live = false;
+    for (const sh of (this.marks.shutters || [])) { sh.open = true; this.setShutter(sh, true); }
+  }
+
+  // ------------------------------------------------------------------ course
+  //
+  //  Three families of obstacle, all of them on a clock, none of them able to
+  //  kill you. What they take is time and legs — which is the only thing being
+  //  measured, and the only thing you have.
+
+  /** Plates run warn -> live -> dead, so there is always a tell. */
+  plateState(pl) {
+    const u = (this.hazT * 0.42 + pl.phase) % 1;
+    return u < 0.16 ? 'warn' : u < 0.44 ? 'live' : 'dead';
+  }
+
+  /** Shutters are open, then warn, then shut. */
+  shutterState(sh) {
+    const u = (this.hazT * 0.26 + sh.phase) % 1;
+    return u < 0.52 ? 'open' : u < 0.66 ? 'warn' : 'shut';
+  }
+
+  setShutter(sh, open) {
+    const g = this.game;
+    if (!g || !g.world) return;
+    for (let ty = sh.y0; ty <= sh.y1; ty++) {
+      g.world.setTile(sh.tx, ty, open ? T.LAB_TEAL : T.LAB_WALL);
+    }
+  }
+
+  /** Where a sweep arm's bar is right now, in world pixels. */
+  sweepY(sw) {
+    const u = (this.hazT * sw.speed + sw.phase) % 1;
+    const tri = u < 0.5 ? u * 2 : 2 - u * 2;         // 0..1..0
+    return lerp(sw.y0, sw.y1, tri);
+  }
+
+  /**
+   * Being caught by any of it.
+   *
+   * Deliberately not damage: the chapter has no healing in it and a death here
+   * would mean a reload, which is not the scene. It costs exhaustion and it
+   * puts you on the floor for half a second, which in a timed run is worse.
+   */
+  zap(game, x, y, amount, colour) {
+    if (this.zapT > 0) return;
+    this.zapT = 0.45;
+    this.stagger = 0.55;
+    this.exhaustion = clamp(this.exhaustion + amount, 0, 100);
+    game.hitFlash = Math.max(game.hitFlash, 0.5);
+    game.r.camera.addShake(4);
+    audio.play('sparker', { vol: 0.8 });
+    particles.ring(x, y - 6, 3, 22, 0.35, colour, 2, true);
+    particles.text(x, y - 28, pick(['nnh', 'agh', '—']), colour, { life: 0.6 });
+  }
+
+  updateCourseHazards(dt, game) {
+    const p = game.player;
+    this.hazT += dt;
+    this.zapT = Math.max(0, this.zapT - dt);
+    this.stagger = Math.max(0, this.stagger - dt);
+
+    // plates
+    for (const pl of (this.marks.plates || [])) {
+      const st = this.plateState(pl);
+      pl.live = st === 'live';
+      pl.warn = st === 'warn';
+      if (!pl.live) continue;
+      const x0 = pl.tx * TS, y0 = pl.ty * TS;
+      if (p.x > x0 && p.x < x0 + pl.w * TS && p.y > y0 && p.y < y0 + pl.h * TS) {
+        this.zap(game, p.x, p.y, 16, P.cyber);
+      }
+    }
+
+    // shutters
+    for (const sh of (this.marks.shutters || [])) {
+      const st = this.shutterState(sh);
+      sh.warn = st === 'warn';
+      const wantOpen = st !== 'shut';
+      if (wantOpen !== sh.open) {
+        sh.open = wantOpen;
+        this.setShutter(sh, wantOpen);
+        if (!wantOpen) {
+          audio.play('metal', { vol: 0.8, pitch: 0.7 });
+          // if it came down on top of you, it shoves you out rather than
+          // sealing you into a wall
+          const sx = sh.tx * TS + TS / 2;
+          if (Math.abs(p.x - sx) < TS && p.y < (sh.y1 + 1) * TS) {
+            p.x = sx + (p.x < sx ? -TS * 1.3 : TS * 1.3);
+            this.zap(game, p.x, p.y, 14, P.uiWarn);
+          }
+        }
+      }
+    }
+
+    // sweep arms
+    for (const sw of (this.marks.sweeps || [])) {
+      const by = this.sweepY(sw);
+      if (Math.abs(p.x - sw.x) < 7 && Math.abs(p.y - by) < 9) {
+        const dir = p.x < sw.x ? -1 : 1;
+        p.x += dir * 16;
+        this.zap(game, p.x, p.y, 12, P.uiWarn);
+      }
+    }
   }
 
   /**
@@ -21070,34 +21361,77 @@ class Campaign {
         }),
       beat.clearLine(),
       beat.say('DAX', "HA! Two years! Two years and it took eleven seconds!", 3.2, P.uiGood),
+      // He goes first, and he goes all the way out — into the middle of the
+      // block, in the open, where there is nothing between him and the door
+      // they are about to come through.
       beat.do(() => {
-        this.dax.moveTo(gx - 8, gy + 8, 60);
+        const o = this.corridorOut();
+        this.dax.moveTo(o.x, o.y, 62);
         this.dax.anim = 'walk';
+        this.objective = 'GET OUT OF THE TANK';
+        this.waypoint = { x: o.x, y: o.y, label: 'DAX' };
       }),
-      beat.wait(1.4),
-      beat.say('DAX', "Come on. Service corridor, south end. I know the way, I've watched them walk it a thousand—", 4.4),
+      beat.wait(1.6),
+      beat.say('DAX', "Well? Out. Come on, out, out—", 2.4, P.uiGood),
+      // and you have to actually walk out of it yourself
+      beat.until((game) => this.outsideCell(game.player), 14),
+      beat.clearLine(),
+      beat.say('DAX', "Six hundred and twelve days and you're standing on their floor.", 3.6),
+      beat.say('DAX', "Service corridor, south end. I've watched them walk it a thousand—", 3.8),
       beat.do(() => this.startShot()),
     ]);
+  }
+
+  /**
+   * The spot in the middle of the block, clear of both tanks.
+   *
+   * Everything that happens after the glass goes happens here rather than in
+   * the doorway of your own tank: you are out, he is out, and the room is
+   * suddenly very large.
+   */
+  corridorOut() {
+    const m = this.marks.cage;
+    return { x: m.x + 84, y: m.y + 112 };
+  }
+
+  /** True once the body is clear of the tank's walls, not just the doorway. */
+  outsideCell(a) {
+    const m = this.marks.cage;
+    return Math.abs(a.x - m.x) > TS * 3.4 || Math.abs(a.y - m.y) > TS * 3.4;
   }
 
   startShot() {
     this.chapter = CHAPTER.SHOT;
     this.objective = '';
     const g = this.game;
-    const gm = this.marks.cageGlass;
-    const gx = gm.tx * TS + TS / 2, gy = gm.ty * TS + TS / 2;
+    // Out on the block floor, well clear of both tanks. He is shot standing in
+    // the open with the whole room around him, not wedged in your doorway.
+    const o = this.corridorOut();
+    const gx = o.x, gy = o.y;
     this.blockPlayer = true;
+    this.waypoint = null;
+    // wherever the player got to, the camera holds the two of them
+    g.r.camera.follow((gx + g.player.x) / 2, (gy + g.player.y) / 2);
 
-    this.guard = new Actor('critter', HUMANS.enforcer.cfg, gx + 130, gy - 60, { name: 'Guard', key: 'guard', facing: -1 });
+    this.guard = new Actor('critter', HUMANS.enforcer.cfg, gx + 190, gy - 20, { name: 'Guard', key: 'guard', facing: -1 });
     this.actors.push(this.guard);
 
     this.play([
       beat.sfx('alarm', 1),
       beat.do(() => { g.hitFlash = 0.7; g.r.camera.addShake(3); }),
       beat.say('', 'CONTAINMENT BREACH - BLOCK C', 2, P.nestEye),
-      beat.do(() => { this.guard.moveTo(gx + 46, gy - 10, 90); }),
-      beat.wait(1.6),
+      beat.do(() => { this.guard.moveTo(gx + 62, gy - 4, 95); }),
+      beat.wait(1.8),
       beat.clearLine(),
+      // Dax puts himself between the door and you, which is the last thing he
+      // does and the reason he is the one who gets shot.
+      beat.do(() => {
+        this.dax.target = null;
+        this.dax.x = gx; this.dax.y = gy;
+        this.dax.facing = 1;
+        this.dax.anim = 'idle';
+        g.r.camera.follow(gx + 18, gy - 8);
+      }),
       beat.say('GUARD', "Down. Both of you. DOWN.", 2, P.nestEye),
       beat.do(() => { this.dax.target = null; this.dax.anim = 'idle'; this.dax.facing = 1; }),
       beat.say('DAX', "Run. Forty-one — RUN—", 1.8, P.uiWarn),
@@ -21122,6 +21456,22 @@ class Campaign {
       beat.wait(1.6),
       beat.say('', '...', 1.4),
       beat.clearLine(),
+      // The four people who were walked past you an hour ago are still in the
+      // room behind the glass, and they have just watched it happen.
+      beat.do(() => {
+        for (const o of (this.observers || [])) { o.anim = 'idle'; o.facing = 1; o.alarmed = true; }
+        audio.play('ui', { vol: 0.25, pitch: 1.4 });
+      }),
+      beat.say('OBSERVER', "—is it supposed to— should it be doing that—", 2.8, P.uiWarn),
+      beat.clearLine(),
+      // and he is still exactly where he was, because he never left either
+      beat.do(() => {
+        if (this.vane && !this.vane.dead) g.r.camera.follow(this.vane.x, this.vane.y + 20);
+      }),
+      beat.wait(1),
+      beat.say('VANE', "Nobody clean that up. I want her to walk through it.", 3.4, P.nestEye),
+      beat.clearLine(),
+      beat.do(() => { g.r.camera.follow(g.player.x, g.player.y); }),
       // and then you stop being a subject
       beat.do(() => {
         g.player.overclock = true;
@@ -21436,7 +21786,8 @@ class Campaign {
     const moving = Math.hypot(ax.x, ax.y) > 0.2;
     this.exhaustion = clamp(this.exhaustion + (moving ? dt * 3.6 : -dt * 5.5), 0, 100);
     this.exhaustionPeak = Math.max(this.exhaustionPeak, this.exhaustion);
-    p.speedMult = 1 - (this.exhaustion / 100) * 0.55;
+    this.updateCourseHazards(dt, game);
+    p.speedMult = (1 - (this.exhaustion / 100) * 0.55) * (this.stagger > 0 ? 0.28 : 1);
     if (this.exhaustion > 70 && chance(dt * 3)) {
       particles.text(p.x, p.y - 26, pick(['hh', 'hah', '...']), P.uiDim, { life: 0.7 });
     }
@@ -21450,8 +21801,11 @@ class Campaign {
         'VANE: NOTE THE PACE. SHE IS NOT TIRED. SHE IS ANGRY.',
         'VANE: MARK THAT. SHE LOOKED AT THE GALLERY.',
         'VANE: NOBODY WRITE ANYTHING DOWN THAT I DO NOT SAY.',
+      'VANE: SHUTTER TWO AGAIN, PLEASE. I WANT TO SEE HER READ IT.',
+      'VANE: SHE IS NOT AVOIDING THE ARMS. SHE IS TIMING THEM.',
       ] : [
-        'VANE: SECOND LAP. SIX SECONDS OFF. GOOD.',
+        'VANE: SHE TOOK THE PLATES RATHER THAN GO ROUND. WRITE THAT DOWN.',
+      'VANE: SECOND LAP. SIX SECONDS OFF. GOOD.',
         'VANE: SHE HAS NOT LOOKED AT THE DISH ONCE THIS LAP.',
         'VANE: THIS IS THE PART I WANTED TO SEE.',
         'VANE: KEEP THE DOORS SHUT UNTIL SHE FINISHES.',
@@ -21467,6 +21821,8 @@ class Campaign {
     if (!this.courseDone && dist2(p.x, p.y, d.x, d.y) < 26 * 26) {
       this.courseDone = true;
       p.speedMult = 1;
+      this.stagger = 0;
+      for (const sh of (this.marks.shutters || [])) { sh.open = true; this.setShutter(sh, true); }
       if (this.lap === 1) { this.denyFood(game); return; }
       audio.play('coinup');
       particles.burst(d.x, d.y - 6, 16, { colors: ['#a97c46', '#c49a63'], speed: 70, life: 0.6, vz: 60 });
@@ -21673,6 +22029,8 @@ class Campaign {
       }
     }
 
+    if (this.chapter === CHAPTER.COURSE) this.drawCourse(r, game);
+
     // the transport waiting on the pad
     if (this.padHeli && this.chapter === CHAPTER.RAMPAGE) {
       const f = heliFrames();
@@ -21681,6 +22039,65 @@ class Campaign {
       r.draw(img, this.padHeli.x - img.width / 2, this.padHeli.y - img.height + 6);
       const pulse = 0.5 + Math.sin(game.time * 5) * 0.4;
       r.ring(this.padHeli.x, this.padHeli.y + 4, 22, P.sulfurHi, 1, pulse);
+    }
+  }
+
+  /**
+   * The obstacles, drawn where they are.
+   *
+   * Every one of them telegraphs: a plate lights its border before it goes
+   * live, a shutter flashes its rails before it drops, an arm is a solid bar
+   * you can see coming. Nothing in the course is a gotcha — the difficulty is
+   * that you are being timed while you read them.
+   */
+  drawCourse(r, game) {
+    const cam = r.camera;
+    const t = game.time;
+    for (const pl of (this.marks.plates || [])) {
+      const x = pl.tx * TS, y = pl.ty * TS, w = pl.w * TS, h = pl.h * TS;
+      if (!cam.visible(x + w / 2, y + h / 2, 60)) continue;
+      if (pl.live) {
+        r.rect(x, y, w, h, 'rgba(77,225,255,0.20)');
+        // arcs crawling across the plate
+        for (let i = 0; i < 3; i++) {
+          const u = ((t * 2.2 + i * 0.37 + pl.phase) % 1);
+          r.rect(x + 1, y + 2 + u * (h - 4), w - 2, 1, P.cyber);
+        }
+        r.strokeRect(x, y, w, h, P.cyber);
+      } else if (pl.warn) {
+        r.ctx.globalAlpha = 0.35 + Math.sin(t * 22) * 0.25;
+        r.strokeRect(x, y, w, h, P.cyber);
+        r.ctx.globalAlpha = 1;
+      } else {
+        r.strokeRect(x, y, w, h, 'rgba(120,150,155,0.28)');
+      }
+    }
+    for (const sh of (this.marks.shutters || [])) {
+      const x = sh.tx * TS, y0 = sh.y0 * TS, y1 = (sh.y1 + 1) * TS;
+      if (!cam.visible(x, (y0 + y1) / 2, 120)) continue;
+      // the rails it runs in, always visible, so the trap is legible from afar
+      r.rect(x - 1, y0, 1, y1 - y0, 'rgba(140,170,175,0.35)');
+      r.rect(x + TS, y0, 1, y1 - y0, 'rgba(140,170,175,0.35)');
+      if (sh.warn) {
+        const a = 0.4 + Math.sin(t * 26) * 0.3;
+        r.rect(x, y0, TS, y1 - y0, `rgba(224,90,60,${(a * 0.22).toFixed(3)})`);
+        r.ctx.globalAlpha = a;
+        r.strokeRect(x, y0, TS, y1 - y0, P.uiWarn);
+        r.ctx.globalAlpha = 1;
+      }
+    }
+    for (const sw of (this.marks.sweeps || [])) {
+      const by = this.sweepY(sw);
+      if (!cam.visible(sw.x, by, 80)) continue;
+      r.shadow(sw.x, by + 5, sw.len * 0.4, 4, 0.25);
+      r.rect(sw.x - sw.len / 2, by - 2, sw.len, 4, '#6b7a7e');
+      r.rect(sw.x - sw.len / 2, by - 2, sw.len, 1, '#9fb0b4');
+      r.rect(sw.x - sw.len / 2, by + 1, sw.len, 1, '#3c4749');
+      // hazard stripes, so it reads as machinery and not a girder
+      for (let i = 0; i < sw.len; i += 6) {
+        r.rect(sw.x - sw.len / 2 + i, by - 2, 3, 4, 'rgba(201,162,60,0.65)');
+      }
+      r.rect(sw.x - 2, by - 4, 4, 8, '#8a9a9e');
     }
   }
 

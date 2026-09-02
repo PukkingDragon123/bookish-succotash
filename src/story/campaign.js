@@ -756,6 +756,23 @@ export class Campaign {
       beat.say('DAX', "Well? Out. Come on, out, out—", 2.4, P.uiGood),
       // and you have to actually walk out of it yourself
       beat.until((game) => this.outsideCell(game.player), 14),
+      // once you are out, you stand there and let him say it — otherwise you
+      // can wander half the block away before the alarm goes and the camera
+      // ends up framing two people you cannot see.
+      beat.do((game) => {
+        // If you never moved, the scene still has to happen outside the tank,
+        // so it walks you through the hole you just made rather than playing
+        // the whole thing around a ferret standing in her own cage.
+        if (!this.outsideCell(game.player)) {
+          const gm2 = this.marks.cageGlass;
+          game.player.x = gm2.tx * TS + TS * 1.6;
+          game.player.y = gm2.ty * TS + TS / 2;
+          if (game.player.rig) game.player.rig.reset(game.player.x, game.player.y);
+        }
+        this.blockPlayer = true;
+        this.waypoint = null;
+        game.r.camera.follow((this.dax.x + game.player.x) / 2, (this.dax.y + game.player.y) / 2);
+      }),
       beat.clearLine(),
       beat.say('DAX', "Six hundred and twelve days and you're standing on their floor.", 3.6),
       beat.say('DAX', "Service corridor, south end. I've watched them walk it a thousand—", 3.8),
