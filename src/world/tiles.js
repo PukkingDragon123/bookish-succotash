@@ -342,6 +342,40 @@ export function drawTile(ctx, px, py, id, tx, ty, nb) {
     default: break;
   }
 
+  // --- shoreline ----------------------------------------------------------
+  //
+  // The edge blender below deliberately refuses to bleed water into land, so
+  // without this a lake is a stack of hard stair-steps. A water tile that
+  // touches dry ground instead grows a shallow band along that side: wet sand
+  // first, then a broken line of foam, both chewed up by a hash so the
+  // staircase stops reading as a staircase.
+  if (nb && t.water && !t.indoor) {
+    const edges = [[0, -1, 1, 0], [0, 1, 1, 0], [-1, 0, 0, 1], [1, 0, 0, 1]];
+    for (const [dx, dy, ax, ay] of edges) {
+      const other = nb(dx, dy);
+      if (other == null) continue;
+      const ot = TILES[other];
+      if (!ot || ot.water) continue;
+      const ex = dx > 0 ? TS - 1 : 0, ey = dy > 0 ? TS - 1 : 0;
+      for (let d = 0; d < 4; d++) {
+        for (let k = 0; k < TS; k++) {
+          const gx = px + ex + ax * k - (dx ? dx * d : 0);
+          const gy = py + ey + ay * k - (dy ? dy * d : 0);
+          const n = hash2(gx, gy, 93);
+          // band 0-1 is wet ground, 2-3 is the foam line breaking up
+          if (d < 2) {
+            if (n > 0.24 + d * 0.30) continue;
+            ctx.fillStyle = d === 0 ? shade(ot.base, -0.10) : shade(ot.base, -0.24);
+          } else {
+            if (n > 0.40 - (d - 2) * 0.22) continue;
+            ctx.fillStyle = d === 2 ? P.waterFoam : t.light;
+          }
+          ctx.fillRect(gx, gy, 1, 1);
+        }
+      }
+    }
+  }
+
   // --- edge blending ------------------------------------------------------
   // A single dithered pixel row still reads as a hard grid line when two
   // greens meet. Instead the neighbour bleeds four pixels in, thinning out

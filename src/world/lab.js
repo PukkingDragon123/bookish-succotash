@@ -202,9 +202,6 @@ export function buildLab(world, seed = 1) {
     P(gx + 1, gy - 3, 'hurdle');
     gate(gx, gy);
   }
-  marks.hurdles = [];
-  for (const [gx, gy] of weave) marks.hurdles.push({ x: (gx + 1) * TS, y: gy * TS });
-
   // --- 2. the shock plates ------------------------------------------------
   //
   // Four columns of floor panels that go live on a cycle. They are laid so
@@ -213,9 +210,12 @@ export function buildLab(world, seed = 1) {
   marks.plates = [];
   for (let c = 0; c < 4; c++) {
     const px2 = 59 + c * 3;
+    // Four blocks with a clear lane between each, so there is a way through
+    // even with every plate live — the alternating phase just makes the short
+    // way through open and shut while you are looking at it.
     for (let k = 0; k < 4; k++) {
-      const py2 = iy0 + 2 + k * 6;
-      marks.plates.push({ tx: px2, ty: py2, w: 2, h: 4, phase: (c * 0.27 + k * 0.5) % 1 });
+      const py2 = iy0 + 1 + k * 6;
+      marks.plates.push({ tx: px2, ty: py2, w: 2, h: 3, phase: (c * 0.27 + k * 0.5) % 1 });
     }
   }
   gate(64, 18);

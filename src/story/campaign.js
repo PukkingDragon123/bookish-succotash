@@ -440,12 +440,29 @@ export class Campaign {
     if (this.tourPhase === 'in' && this.tourT > 7) {
       this.tourPhase = 'look';
       this.tourT = 0;
+      this.tourLine = 0;
       for (const a of this.tour) { a.target = null; a.anim = 'idle'; a.facing = -1; }
-      game.dialogue.showFloating(this.tour[0], 'Block C. Forty-one is the one with the eye.', 3.4);
-    } else if (this.tourPhase === 'look' && this.tourT > 5.5) {
-      game.dialogue.showFloating(this.tour[2], 'Does it know we are here?', 2.8);
     }
-    if (this.tourPhase === 'look' && this.tourT > 9) {
+    // The worst thing in the room is not Vane. It is four people being polite
+    // about you in the middle of a working day: one of them asks the human
+    // question, and the guide answers it in company language without pausing.
+    if (this.tourPhase === 'look') {
+      const script = [
+        [0.4, 0, 'Block C. Forty-one is the one with the eye.', 3.4],
+        [4.0, 2, 'Does it know we are here?', 2.8],
+        [7.0, 0, 'It has no way to form that. There is nothing behind it.', 3.6],
+        [10.6, 3, "It's looking right at me though.", 2.8],
+        [13.6, 0, 'They track movement. Please do not tap the glass.', 3.4],
+        [17.0, 1, 'And the gap in the fur, that is where you—', 2.6],
+        [19.6, 0, 'Six hundred and twelve days, and every figure inside tolerance.', 3.8],
+      ];
+      while (this.tourLine < script.length && this.tourT > script[this.tourLine][0]) {
+        const [, who, text, dur] = script[this.tourLine++];
+        const a = this.tour[who];
+        if (a) game.dialogue.showFloating(a, text, dur);
+      }
+    }
+    if (this.tourPhase === 'look' && this.tourT > 23.5) {
       this.tourPhase = 'out';
       this.tourT = 0;
       // The fourth one hangs back. Nobody notices, because nobody is counting
@@ -1185,6 +1202,8 @@ export class Campaign {
     if (!this.courseDone && dist2(p.x, p.y, d.x, d.y) < 26 * 26) {
       this.courseDone = true;
       p.speedMult = 1;
+      this.stagger = 0;
+      for (const sh of (this.marks.shutters || [])) { sh.open = true; this.setShutter(sh, true); }
       if (this.lap === 1) { this.denyFood(game); return; }
       audio.play('coinup');
       particles.burst(d.x, d.y - 6, 16, { colors: ['#a97c46', '#c49a63'], speed: 70, life: 0.6, vz: 60 });
