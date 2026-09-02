@@ -617,6 +617,42 @@ export class World {
       }
     }
 
+    // --- canopy shade --------------------------------------------------------
+    //
+    // A tree that only has a contact shadow under its trunk is a tree standing
+    // on a lawn. Real forest floor is dark because there is a canopy over it,
+    // so every tree lays a wide soft pool on the ground here, at bake time,
+    // where it costs nothing per frame. Read out of the spatial hash rather
+    // than by walking every node in the basin.
+    const cs = this.cellSize;
+    const px0 = cx * CHUNK_PX, py0 = cy * CHUNK_PX;
+    const pad = 40;
+    const gx0 = ((px0 - pad) / cs) | 0, gx1 = ((px0 + CHUNK_PX + pad) / cs) | 0;
+    const gy0 = ((py0 - pad) / cs) | 0, gy1 = ((py0 + CHUNK_PX + pad) / cs) | 0;
+    ctx.save();
+    ctx.translate(-px0, -py0);
+    for (let gy = gy0; gy <= gy1; gy++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const arr = this.grid.get(gx + ',' + gy);
+        if (!arr) continue;
+        for (const o of arr) {
+          if (o.objType !== 'node' || !o.def || o.def.art !== 'tree') continue;
+          if (TILES[this.tileAtPx(o.x, o.y)].indoor) continue;
+          const rr = (o.def.r || 6) * 3.4;
+          const cyy = o.y - rr * 0.16;
+          const gr = ctx.createRadialGradient(o.x, cyy, 0, o.x, cyy, rr);
+          gr.addColorStop(0, 'rgba(9,20,14,0.30)');
+          gr.addColorStop(0.55, 'rgba(9,20,14,0.17)');
+          gr.addColorStop(1, 'rgba(9,20,14,0)');
+          ctx.fillStyle = gr;
+          ctx.beginPath();
+          ctx.ellipse(o.x, cyy, rr, rr * 0.72, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+
     c = canvas;
     this.chunks.set(k, c);
     // keep the cache bounded; the player only ever sees a couple of dozen

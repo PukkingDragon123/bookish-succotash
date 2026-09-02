@@ -169,34 +169,104 @@ export function buildLab(world, seed = 1) {
   VENT(hx0 + 2, cageY + 4, 20, 34, 'block C to the service run');
 
   // --- the course ---------------------------------------------------------
-  // A testing maze east of the block. You run it for food, and it is tiring.
-  const cx0 = 46, cy0 = 6, cx1 = 88, cy1 = 30;
+  //
+  // Not a corridor with six doorways in it. Five sections, each testing a
+  // different thing, laid west to east: weave, shock plates, shutters, the
+  // coolant channel, and the sweep arms. Every section has a slow way through
+  // that is always open and a fast way through that will hurt you, because the
+  // whole exercise is Vane finding out which one you take when you are hungry.
+  //
+  // Nothing in here can kill you. It costs you the one currency the chapter
+  // actually runs on, which is how tired you are.
+  const cx0 = 46, cy0 = 6, cx1 = 93, cy1 = 30;
   room(w, cx0, cy0, cx1, cy1, T.LAB_TEAL);
   doorway(w, hx1, cageY - 1, cx0, cageY + 1, T.LAB_FLOOR);
   marks.courseStart = { x: (cx0 + 3) * TS, y: cageY * TS };
+  const iy0 = cy0 + 1, iy1 = cy1 - 1;                  // walkable rows
 
-  // baffles to weave through
   const gates = [];
-  for (let i = 0; i < 6; i++) {
-    const gx = cx0 + 5 + i * 6;
-    const gapY = cy0 + 4 + ((i * 7) % 14);
-    for (let ty = cy0 + 1; ty <= cy1 - 1; ty++) {
-      if (Math.abs(ty - gapY) <= 2) continue;
+  const gate = (gx, gapY) => gates.push({ x: gx * TS, y: gapY * TS });
+  // A baffle with a gap in it. Nothing else in the course is ever fully solid.
+  const baffle = (gx, gapY, half = 2) => {
+    for (let ty = iy0; ty <= iy1; ty++) {
+      if (Math.abs(ty - gapY) <= half) continue;
       w.tiles[w.idx(gx, ty)] = T.LAB_WALL;
     }
-    P(gx + 1, gapY + 3, 'hurdle');
-    gates.push({ x: gx * TS, y: gapY * TS });
+  };
+
+  // --- 1. the weave: gaps that alternate top and bottom -------------------
+  const weave = [[50, 9], [53, 25], [56, 11], [59, 24]];
+  for (const [gx, gy] of weave) {
+    baffle(gx, gy);
+    P(gx + 1, gy + 3, 'hurdle');
+    P(gx + 1, gy - 3, 'hurdle');
+    gate(gx, gy);
   }
+  marks.hurdles = [];
+  for (const [gx, gy] of weave) marks.hurdles.push({ x: (gx + 1) * TS, y: gy * TS });
+
+  // --- 2. the shock plates ------------------------------------------------
+  //
+  // Four columns of floor panels that go live on a cycle. They are laid so
+  // that at any moment there is a way through — you just have to read it while
+  // you are running, and the alternative is to stand still and be timed for it.
+  marks.plates = [];
+  for (let c = 0; c < 4; c++) {
+    const px2 = 59 + c * 3;
+    for (let k = 0; k < 4; k++) {
+      const py2 = iy0 + 2 + k * 6;
+      marks.plates.push({ tx: px2, ty: py2, w: 2, h: 4, phase: (c * 0.27 + k * 0.5) % 1 });
+    }
+  }
+  gate(64, 18);
+
+  // --- 3. the shutters ----------------------------------------------------
+  //
+  // Slam down across the top two thirds on a cycle. The bottom third is never
+  // blocked, so there is always a route — it is just the long one, and it has
+  // hurdles in it.
+  marks.shutters = [];
+  for (let i = 0; i < 3; i++) {
+    const sx = 72 + i * 4;
+    marks.shutters.push({ tx: sx, y0: iy0, y1: iy1 - 8, phase: i * 0.33, open: true });
+    for (let ty = iy1 - 7; ty <= iy1; ty++) w.tiles[w.idx(sx, ty)] = T.LAB_TEAL;
+    P(sx + 1, iy1 - 2, 'hurdle');
+  }
+  gate(76, 12);
+
+  // --- 4. the coolant channel ---------------------------------------------
+  // Ankle deep and freezing, with posts in it to break your line.
+  for (let ty = iy0; ty <= iy1; ty++) {
+    for (let tx = 82; tx <= 86; tx++) w.tiles[w.idx(tx, ty)] = T.LAB_WET;
+  }
+  for (let i = 0; i < 7; i++) {
+    const ptx = 83 + (i % 3) * 2, pty = iy0 + 1 + i * 3;
+    if (pty > iy1 - 1) continue;
+    w.tiles[w.idx(ptx, pty)] = T.LAB_WALL;
+  }
+  gate(84, 18);
+
+  // --- 5. the sweep arms --------------------------------------------------
+  // Two bars on a hinge, tracking up and down the last straight. Walk into one
+  // and it puts you on the floor; it does not stop you finishing.
+  marks.sweeps = [
+    { x: 88 * TS, y0: (iy0 + 1) * TS, y1: (iy1 - 1) * TS, len: 40, phase: 0, speed: 0.62 },
+    { x: 90 * TS, y0: (iy0 + 1) * TS, y1: (iy1 - 1) * TS, len: 40, phase: 0.5, speed: 0.48 },
+  ];
+
   marks.gates = gates;
   // the dish at the far end: the entire point of the exercise
-  const dishX = cx1 - 3, dishY = Math.floor((cy0 + cy1) / 2);
+  const dishX = cx1 - 1, dishY = Math.floor((cy0 + cy1) / 2);
   P(dishX, dishY, 'dish');
   marks.dish = { x: dishX * TS + TS / 2, y: dishY * TS + TS / 2 };
   // the gallery: they watch this from behind glass and write it down
-  for (let i = 0; i < 4; i++) P(cx0 + 6 + i * 8, cy0 + 1, 'terminal');
+  for (let i = 0; i < 5; i++) P(cx0 + 6 + i * 8, cy0 + 1, 'terminal');
   P(cx0 + 2, cy0 + 2, 'signWay');
   P(cx1 - 2, cy1 - 3, 'drain');
   P(cx0 + 14, cy1 - 2, 'drain');
+  P(60, cy1 - 2, 'signHazard');
+  P(74, cy0 + 2, 'signHazard');
+  P(83, cy1 - 2, 'drain');
   I(cx0 + 3, cy1 - 3, 'terminal', 'read', 'READ THE TERMINAL', {
     text: 'COURSE TIMES, SUBJECT 41\nDAY 604: 41s.  DAY 607: 38s.  DAY 610: 36s.\nDAY 611: 51s. WITHHELD FOOD. DAY 612: PENDING.',
   });

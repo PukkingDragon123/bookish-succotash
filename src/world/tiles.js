@@ -17,7 +17,7 @@ export const T = {
   ASH: 17, CHARRED: 18, SNOW: 19, OBSIDIAN: 20, MAT_RUST: 21, SPRING_DEEP: 22,
   // Les Nest interiors
   LAB_FLOOR: 23, LAB_DARK: 24, LAB_WALL: 25, LAB_GLASS: 26,
-  LAB_GRATE: 27, LAB_TEAL: 28, LAB_BLOOD: 29, LAB_PAD: 30,
+  LAB_GRATE: 27, LAB_TEAL: 28, LAB_BLOOD: 29, LAB_PAD: 30, LAB_WET: 31,
 };
 
 export const TILES = [];
@@ -58,6 +58,10 @@ def(T.LAB_TEAL,  { name: 'company floor', base: '#17403e', light: '#22605c', dar
 // baked into the panel grid, or every tile edge comes out as a red line.
 def(T.LAB_BLOOD, { name: 'floor', base: '#3f4a4c', light: '#4e5a5c', dark: '#2f383a', indoor: true, bloody: true });
 def(T.LAB_PAD,   { name: 'helipad', base: '#37403f', light: '#c9a23c', dark: '#232a2a', indoor: true });
+// The coolant channel that runs through the middle of the course. Ankle deep,
+// freezing, and the only thing in the building that is honest about what it is
+// for: it is there to slow you down while they time you.
+def(T.LAB_WET,   { name: 'coolant channel', base: '#1d4a52', light: '#2f7681', dark: '#123338', speed: 0.52, indoor: true });
 
 export const isWater = (t) => TILES[t].water;
 export const isSolid = (t) => TILES[t].solid;
@@ -218,6 +222,18 @@ export function drawTile(ctx, px, py, id, tx, ty, nb) {
         const x = px + Math.floor(hash2(tx + i, ty * 5, 32) * TS);
         const y = py + Math.floor(hash2(tx * 5, ty + i, 33) * TS);
         ctx.fillRect(x, y, 2, 1);
+      }
+      break;
+    }
+    case T.LAB_WET: {
+      // grate bars showing through, plus a couple of surface glints
+      ctx.fillStyle = t.dark;
+      for (let i = 1; i < TS; i += 4) ctx.fillRect(px, py + i, TS, 1);
+      ctx.fillStyle = t.light;
+      for (let i = 0; i < 3; i++) {
+        const x = px + Math.floor(hash2(tx * 7 + i, ty * 13, 36) * (TS - 5));
+        const y = py + Math.floor(hash2(tx * 3, ty * 11 + i, 37) * TS);
+        ctx.fillRect(x, y, 4, 1);
       }
       break;
     }
