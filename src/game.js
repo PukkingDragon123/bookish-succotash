@@ -540,6 +540,7 @@ export class Game {
   handlePanelKeys() {
     const i = this.input;
     if (i.keyPressed('Tab') || i.touch.isPressed('craft')) this.panels.toggle('craft');
+    if (i.keyPressed('KeyI') || i.touch.isPressed('bag')) this.panels.toggle('bag');
     if (i.keyPressed('KeyC') || i.touch.isPressed('chips')) this.panels.toggle('chips');
     if (i.keyPressed('KeyM') || i.touch.isPressed('map')) this.panels.toggle('map');
     if (i.isPressed('fullscreen')) toggleFullscreen(document.documentElement);

@@ -252,10 +252,11 @@ export class TouchControls {
 
       // top-right row: menus, out of the way of both thumbs
       { action: 'craft',      label: 'CRF', x: W - smallR - gap, y: smallR + gap, r: smallR, tint: '#e8d7b0' },
-      { action: 'chips',      label: 'CHP', x: W - smallR * 3 - gap * 2, y: smallR + gap, r: smallR, tint: '#4de1ff' },
-      { action: 'map',        label: 'MAP', x: W - smallR * 5 - gap * 3, y: smallR + gap, r: smallR, tint: '#8ac47a' },
-      { action: 'pause',      label: '||',  x: W - smallR * 7 - gap * 4, y: smallR + gap, r: smallR, tint: '#8a9483' },
-      { action: 'fullscreen', label: 'FS',  x: W - smallR * 9 - gap * 5, y: smallR + gap, r: smallR, tint: '#8a9483' },
+      { action: 'bag',        label: 'BAG', x: W - smallR * 3 - gap * 2, y: smallR + gap, r: smallR, tint: '#c9a23c' },
+      { action: 'chips',      label: 'CHP', x: W - smallR * 5 - gap * 3, y: smallR + gap, r: smallR, tint: '#4de1ff' },
+      { action: 'map',        label: 'MAP', x: W - smallR * 7 - gap * 4, y: smallR + gap, r: smallR, tint: '#8ac47a' },
+      { action: 'pause',      label: '||',  x: W - smallR * 9 - gap * 5, y: smallR + gap, r: smallR, tint: '#8a9483' },
+      { action: 'fullscreen', label: 'FS',  x: W - smallR * 11 - gap * 6, y: smallR + gap, r: smallR, tint: '#8a9483' },
     ];
     this.stickR = Math.round(STICK_R * s * 0.8);
     this.knobR = Math.round(KNOB_R * s * 0.8);

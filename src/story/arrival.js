@@ -430,8 +430,8 @@ export class Arrival {
     if (this.wreck) {
       this.wreck.t += dt;
       if (!this.fireOut) {
-        if (chance(dt * 14)) particles.smoke(this.wreck.x + rnd(-8, 8), this.wreck.y - 6, 1, { life: 2.2, size: 3 });
-        if (chance(dt * 8)) particles.embers(this.wreck.x + rnd(-10, 10), this.wreck.y - 4, 1);
+        if (chance(dt * 18)) particles.smoke(this.wreck.x + rnd(-18, 20), this.wreck.y - 16, 1, { life: 2.6, size: 4 });
+        if (chance(dt * 12)) particles.embers(this.wreck.x + rnd(-22, 24), this.wreck.y - 10, 1);
       }
     }
 
@@ -492,19 +492,45 @@ export class Arrival {
     const w = this.wreck;
     if (w) {
       const cam = r.camera;
-      if (cam.visible(w.x, w.y, 60)) {
+      if (cam.visible(w.x, w.y, 120)) {
         // A torn rotor and a piece of tail boom, half buried. Small, because
         // the fire is the thing you are meant to look at, not the model.
-        r.shadow(w.x, w.y + 4, 20, 6, 0.35);
-        r.rect(w.x - 16, w.y - 6, 32, 8, this.fireOut ? '#2b2b2e' : '#3a3336');
-        r.rect(w.x - 16, w.y - 6, 32, 1, '#4e4a4c');
-        r.rect(w.x - 20, w.y - 12, 40, 2, '#45414a');
-        r.rect(w.x + 8, w.y - 16, 3, 12, '#3a3640');
-        r.rect(w.x - 13, w.y - 3, 6, 4, this.fireOut ? '#241f22' : '#5a2418');
+        // Scaled against the animals, not against the tiles: an elk is sixty
+        // pixels across in this basin, so a transport that reads as debris at
+        // thirty is a piece of litter, not the thing that nearly killed you.
+        const dark = this.fireOut;
+        r.shadow(w.x, w.y + 8, 56, 15, 0.42);
+        // tail boom, thrown out to the left and bent
+        r.rect(w.x - 62, w.y - 16, 40, 11, dark ? '#2a2a2f' : '#39353c');
+        r.rect(w.x - 62, w.y - 16, 40, 2, '#4c4852');
+        r.rect(w.x - 62, w.y - 7, 40, 2, '#211f26');
+        r.rect(w.x - 70, w.y - 27, 8, 18, dark ? '#26262b' : '#332f38');   // tail fin
+        r.rect(w.x - 70, w.y - 27, 8, 2, '#4c4852');
+        // the cabin, on its side and open
+        r.rect(w.x - 24, w.y - 32, 52, 30, dark ? '#2f2f35' : '#403a44');
+        r.rect(w.x - 24, w.y - 32, 52, 3, '#565060');
+        r.rect(w.x - 24, w.y - 6, 52, 4, '#211f26');
+        r.rect(w.x - 26, w.y - 24, 3, 20, '#4a4650');
+        r.rect(w.x - 17, w.y - 27, 19, 15, dark ? '#1d2a2e' : '#2d4a52');  // glass
+        r.rect(w.x - 17, w.y - 27, 19, 2, '#4e7a84');
+        r.rect(w.x - 12, w.y - 25, 3, 11, '#3d5f68');
+        r.rect(w.x + 8, w.y - 26, 16, 10, dark ? '#241f22' : '#7a3018');   // torn plate
+        r.rect(w.x + 8, w.y - 26, 16, 2, dark ? '#332b2e' : '#a34620');
+        // skids, buckled
+        r.rect(w.x - 20, w.y - 1, 44, 3, '#3a3640');
+        r.rect(w.x - 22, w.y - 4, 4, 5, '#3a3640');
+        r.rect(w.x + 20, w.y - 4, 4, 5, '#3a3640');
+        // the rotor, snapped and lying across the whole thing
+        r.rect(w.x - 54, w.y - 44, 104, 4, '#4a4650');
+        r.rect(w.x - 54, w.y - 44, 104, 2, '#6a6474');
+        r.rect(w.x + 34, w.y - 54, 4, 18, '#4a4650');    // a blade folded up
+        r.rect(w.x - 6, w.y - 50, 11, 11, '#565060');    // the head
+        r.rect(w.x - 6, w.y - 50, 11, 2, '#787287');
         if (!this.fireOut) {
           const fl = 0.6 + Math.sin(w.t * 9) * 0.4;
-          r.glow(w.x, w.y - 8, 46, 'rgba(255,150,60,0.55)', 0.5 + fl * 0.3);
-          r.light && r.light(w.x, w.y - 8, 120, 'rgba(255,170,80,0.5)', 0.6);
+          r.glow(w.x, w.y - 14, 72, 'rgba(255,150,60,0.55)', 0.5 + fl * 0.3);
+          r.glow(w.x + 14, w.y - 22, 34, 'rgba(255,214,120,0.6)', 0.4 + fl * 0.4);
+          r.light && r.light(w.x, w.y - 14, 190, 'rgba(255,170,80,0.55)', 0.65);
         }
       }
     }
@@ -529,6 +555,13 @@ export class Arrival {
     // dialogue bar, because they are chatter and not a scene.
     if (this.jay && this.jayLineT > 0 && !this.jay.dead) {
       const j = this.jay;
+      // Three things want the strip of screen just above the player: the
+      // interaction prompt, a dialogue bubble, and this. If either of the
+      // other two is up and near him, his aside waits its turn.
+      const pr = game.prompt;
+      const clash = (pr && Math.abs(pr.x - j.x) < 90 && Math.abs(pr.y - j.y) < 60)
+        || (game.dialogue && game.dialogue.isOpen);
+      if (clash) return;
       const a = clamp(this.jayLineT, 0, 1);
       r.ctx.globalAlpha = a;
       const wpx = this.jayLine.length * 4 + 8;
@@ -543,13 +576,22 @@ export class Arrival {
 
   /** Screen-space: the blackout, the woozy ring, the objective and the count. */
   drawHud(r, ctx, game) {
+    // The objective sits in a plate of its own with a coloured rail, so it
+    // reads as the one thing being asked of you rather than another line of
+    // text competing with the banners for the same six pixels.
     if (this.objective) {
-      drawText(ctx, this.objective, VIEW_W / 2, 6, P.sulfurHi, { align: 'center', shadow: '#000' });
-    }
-    if (this.phase === ARRIVE.BUGS) {
-      const txt = 'BUGS  ' + Math.min(this.bugsCaught, BUG_ASK) + '/' + BUG_ASK;
-      drawText(ctx, txt, VIEW_W / 2, 18, this.bugsCaught >= BUG_ASK ? P.uiGood : P.uiDim,
-        { align: 'center', shadow: '#000' });
+      const w = Math.max(120, this.objective.length * 5 + 22);
+      const x = Math.round(VIEW_W / 2 - w / 2), y = 4;
+      const h = this.phase === ARRIVE.BUGS ? 21 : 13;
+      r.uiRect(x, y, w, h, 'rgba(8,14,12,0.86)');
+      r.uiStroke(x, y, w, h, 'rgba(140,170,120,0.45)');
+      r.uiRect(x, y, 2, h, P.sulfurHi);
+      drawText(ctx, this.objective, x + w / 2 + 1, y + 3, P.sulfurHi, { align: 'center', shadow: '#000' });
+      if (this.phase === ARRIVE.BUGS) {
+        const got = Math.min(this.bugsCaught, BUG_ASK);
+        drawText(ctx, 'BUGS  ' + got + '/' + BUG_ASK, x + w / 2 + 1, y + 12,
+          got >= BUG_ASK ? P.uiGood : P.uiDim, { align: 'center', shadow: '#000' });
+      }
     }
     if (this.cut) this.cut.draw(r, game);
 

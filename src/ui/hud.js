@@ -229,6 +229,10 @@ export class Hud {
   // --- the countdown --------------------------------------------------------
   drawWaveBanner(r, ctx, game) {
     const d = game.director;
+    // Nothing is counting down during the arrival: no patrols, no waves, no
+    // survey team. Showing any of those over the tutorial's objective is two
+    // lines of text in the same six pixels, and one of them is a lie.
+    if (game.arrival && !game.arrival.finished) return;
     // Outposts are the tempo now; the wave clock only shows for the scripted
     // set pieces, so the top of the screen is not two competing countdowns.
     if (game.occupation && game.occupation.outposts.length && !d.isBossWave && d.phase !== PHASE.ASSAULT) {

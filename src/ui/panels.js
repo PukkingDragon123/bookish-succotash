@@ -44,8 +44,19 @@ export class Panels {
     if (input.isPressed('pause')) { this.close(); audio.play('ui'); return; }
 
     if (this.mode === 'craft') this.updateCraft(game, input);
+    else if (this.mode === 'bag') this.updateBag(game, input);
     else if (this.mode === 'chips') this.updateChips(game, input);
     else if (this.mode === 'map') { /* map is read-only */ }
+  }
+
+  updateBag(game, input) {
+    const held = game.player.inv.entries();
+    if (!held.length) return;
+    const step = (d) => { this.cursor = clamp(this.cursor + d, 0, held.length - 1); audio.play('ui', { vol: 0.3 }); };
+    if (input.keyPressed('KeyW') || input.keyPressed('ArrowUp')) step(-3);
+    if (input.keyPressed('KeyS') || input.keyPressed('ArrowDown')) step(3);
+    if (input.keyPressed('KeyA') || input.keyPressed('ArrowLeft')) step(-1);
+    if (input.keyPressed('KeyD') || input.keyPressed('ArrowRight')) step(1);
   }
 
   availableRecipes(game) {
@@ -106,8 +117,75 @@ export class Panels {
     const ctx = r.ctx;
     r.uiRect(0, 0, VIEW_W, VIEW_H, 'rgba(6,10,8,0.82)');
     if (this.mode === 'craft') this.drawCraft(r, ctx, game);
+    else if (this.mode === 'bag') this.drawBag(r, ctx, game);
     else if (this.mode === 'chips') this.drawChips(r, ctx, game);
     else if (this.mode === 'map') this.drawMap(r, ctx, game);
+  }
+
+  /**
+   * The bag.
+   *
+   * The HUD only ever had room for four or five counters, so most of what you
+   * were carrying was invisible — you found out you had forty reeds by opening
+   * the craft screen and reading a cost line. This is a plain grid of every
+   * item with a count, its icon, and one line saying where it comes from, which
+   * is the only thing a resource in this game needs to tell you.
+   */
+  drawBag(r, ctx, game) {
+    const p = game.player;
+    const held = p.inv.entries();
+    // The panel is sized to what you are carrying rather than to the screen.
+    // A full-height frame around four rows of items reads as a bug.
+    const cols = 3, rowsNeeded = Math.max(1, Math.ceil(held.length / cols));
+    const px = 12, pw = VIEW_W - 24;
+    const ph = Math.min(VIEW_H - 32, 46 + Math.min(rowsNeeded, 12) * 17);
+    const py = Math.round((VIEW_H - ph) / 2);
+    r.panel(px, py, pw, ph);
+    drawText(ctx, 'BAG', px + 6, py + 5, P.ui);
+    const total = held.reduce((a, [, n]) => a + n, 0);
+    drawText(ctx, held.length + ' KINDS  -  ' + total + ' THINGS', px + pw - 6, py + 5, P.uiDim, { align: 'right' });
+    drawText(ctx, 'W/S SELECT   I CLOSE', px + pw - 6, py + ph - 10, P.uiDim, { align: 'right' });
+
+    if (!held.length) {
+      drawText(ctx, 'EMPTY. GO AND PICK SOMETHING UP.', px + pw / 2, py + ph / 2, P.uiDim, { align: 'center' });
+      return;
+    }
+    this.cursor = clamp(this.cursor, 0, held.length - 1);
+
+    // Three columns of slots, so it reads as a bag and not a spreadsheet.
+    const cellW = Math.floor((pw - 16) / cols), cellH = 17;
+    const rows = Math.floor((ph - 46) / cellH);
+    const perPage = cols * rows;
+    this.scroll = clamp(Math.floor(this.cursor / cols) - Math.floor(rows / 2), 0,
+                        Math.max(0, Math.ceil(held.length / cols) - rows));
+    const first = this.scroll * cols;
+
+    for (let i = 0; i < perPage; i++) {
+      const idx = first + i;
+      if (idx >= held.length) break;
+      const [key, n] = held[idx];
+      const def = RESOURCES[key] || { name: key, icon: key, color: P.ui };
+      const cx = px + 8 + (i % cols) * cellW;
+      const cy = py + 18 + Math.floor(i / cols) * cellH;
+      const sel = idx === this.cursor;
+      if (sel) r.uiRect(cx - 2, cy - 2, cellW - 4, cellH - 2, 'rgba(61,90,65,0.38)');
+      r.uiRect(cx, cy, 13, 13, 'rgba(0,0,0,0.45)');
+      const icon = itemIcon(def.icon || key);
+      if (icon) ctx.drawImage(icon, cx + 1, cy + 1);
+      drawText(ctx, def.name, cx + 17, cy + 1, sel ? P.ui : P.uiDim);
+      const cap = p.inv.cap(key);
+      const full = cap !== Infinity && n >= cap;
+      drawText(ctx, cap === Infinity ? String(n) : n + '/' + cap,
+        cx + cellW - 10, cy + 1, full ? P.uiWarn : def.color || P.ui, { align: 'right' });
+    }
+
+    // one line about whatever is selected
+    const [selKey] = held[this.cursor] || [];
+    const selDef = RESOURCES[selKey];
+    if (selDef) {
+      r.uiRect(px + 4, py + ph - 22, pw - 8, 1, P.uiDim);
+      drawText(ctx, selDef.hint || '', px + 8, py + ph - 18, P.uiDim);
+    }
   }
 
   drawCraft(r, ctx, game) {

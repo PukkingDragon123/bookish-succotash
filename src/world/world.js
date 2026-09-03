@@ -20,7 +20,7 @@ import { labProp } from '../art/lab.js';
 // These live here rather than in game.js because the campaign needs them to
 // build the world it flies over, and reaching back into game.js for them made
 // an import cycle that scope hoisting cannot order.
-export const FOREST_W = 760, FOREST_H = 620;
+export const FOREST_W = 880, FOREST_H = 700;
 
 export const CHUNK = 8;                 // tiles per chunk side
 export const CHUNK_PX = CHUNK * TS;
@@ -234,6 +234,16 @@ export class World {
         const e = this.elev[i], m = moistArr[i], heat = this.heat[i];
         if (isWater(id) || isSolid(id)) continue;
         const r = hash2(tx, ty, 101);
+        // How thick the trees are here.
+        //
+        // Sprinkling trees at one rate over the whole basin gives a hedge you
+        // walk through for twenty minutes: busy everywhere, open nowhere, and
+        // no sense of distance because every screen looks like the last one.
+        // A slow noise field clumps them into stands with real clearings
+        // between, so the basin reads as big and quiet — you can see across it,
+        // and the thickets mean something when you reach them.
+        const stand = fbm(tx / 34, ty / 34, this.seed + 909, 3);
+        const dens = clamp((stand - 0.36) / 0.40, 0, 1);
         const dScar = Math.hypot(tx - scarCx, ty - scarCy);
         const x = tx * TS + TS / 2 + (hash2(tx, ty, 55) - 0.5) * 10;
         const y = ty * TS + TS / 2 + (hash2(tx, ty, 56) - 0.5) * 10;
@@ -244,23 +254,30 @@ export class World {
           continue;
         }
 
+        // Trees scale with the stand; bushes and rock do not, so a clearing is
+        // open ground you can still forage rather than a dead patch.
         if (id === T.DUFF) {
-          if (r < 0.30) this.addNode(r < 0.09 ? 'pineTall' : (r < 0.2 ? 'pine' : 'pineSmall'), x, y);
-          else if (r < 0.34) this.addNode('spruce', x, y);
-          else if (r < 0.37) this.addNode('huckleberry', x, y);
-          else if (r < 0.385) this.addNode('stone', x, y);
+          const tr = 0.34 * dens;
+          if (r < tr * 0.26) this.addNode('pineTall', x, y);
+          else if (r < tr * 0.64) this.addNode('pine', x, y);
+          else if (r < tr) this.addNode('pineSmall', x, y);
+          else if (r < tr + 0.030) this.addNode('spruce', x, y);
+          else if (r < tr + 0.058) this.addNode('huckleberry', x, y);
+          else if (r < tr + 0.074) this.addNode('stone', x, y);
         } else if (id === T.GRASS) {
-          if (r < 0.13) this.addNode(r < 0.05 ? 'pine' : 'pineSmall', x, y);
-          else if (r < 0.18) this.addNode('aspen', x, y);
-          else if (r < 0.21) this.addNode('serviceberry', x, y);
-          else if (r < 0.225) this.addNode('stone', x, y);
+          const tr = 0.15 * dens;
+          if (r < tr * 0.38) this.addNode('pine', x, y);
+          else if (r < tr) this.addNode('pineSmall', x, y);
+          else if (r < tr + 0.038) this.addNode('aspen', x, y);
+          else if (r < tr + 0.068) this.addNode('serviceberry', x, y);
+          else if (r < tr + 0.083) this.addNode('stone', x, y);
         } else if (id === T.MEADOW || id === T.MEADOW_DRY) {
-          if (r < 0.035) this.addNode('aspen', x, y);
-          else if (r < 0.06) this.addNode('serviceberry', x, y);
-          else if (r < 0.075) this.addNode('stone', x, y);
+          if (r < 0.022 * dens) this.addNode('aspen', x, y);
+          else if (r < 0.052) this.addNode('serviceberry', x, y);
+          else if (r < 0.067) this.addNode('stone', x, y);
         } else if (id === T.SAGE) {
-          if (r < 0.14) this.addNode('sagebush', x, y);
-          else if (r < 0.155) this.addNode('stoneBig', x, y);
+          if (r < 0.11) this.addNode('sagebush', x, y);
+          else if (r < 0.125) this.addNode('stoneBig', x, y);
         } else if (id === T.GRAVEL || id === T.OBSIDIAN) {
           if (r < 0.07) this.addNode('stone', x, y);
           else if (r < 0.10) this.addNode('stoneBig', x, y);

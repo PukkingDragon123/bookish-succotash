@@ -704,6 +704,16 @@ export class Enemy {
     if (!silent) {
       if (this.def.machine) { audio.play('metal', { vol: 0.45 }); particles.sparks(this.x + rnd(-4, 4), this.y - 6, 4, P.nestSteelHi); }
       else { audio.play('flesh', { vol: 0.45 }); particles.blood(this.x + rnd(-3, 3), this.y - 6, 4); }
+      // What the hit was actually worth.
+      //
+      // Without a number the only feedback is a flash, so a graze and a
+      // perfect-dodge counter that pays triple look identical — which makes
+      // every skill in the game invisible. Big hits are bigger and warmer.
+      const shown = Math.max(1, Math.round(dmg));
+      const heavy = shown >= 40;
+      particles.text(this.x + rnd(-4, 4), this.y - 16, String(shown),
+        heavy ? P.sulfurHi : shown >= 18 ? P.ui : P.uiDim,
+        { life: heavy ? 0.85 : 0.55, vy: heavy ? -34 : -22 });
     }
     if (this.hp <= 0) this.die(game);
     return dmg;
