@@ -23,6 +23,7 @@ import { itemIcon, warnMarkerFrames } from './art/items.js';
 import { nestLogoSprite } from './art/machines.js';
 
 import { World, worldObjectSprite, FOREST_W, FOREST_H } from './world/world.js';
+import { Arrival } from './story/arrival.js';
 import { FireSim } from './world/fire.js';
 import { TS, TILES, T, isWater, isSolid, drawWaterShimmer } from './world/tiles.js';
 
@@ -68,6 +69,8 @@ export class Game {
     this.mode = 'forest';            // 'lab' while the campaign is running
     this.campaign = null;
     this.firstStand = null;
+    this.arrival = null;
+    this.blockPlayer = false;
     this.charges = [];
     this.standDelay = 0;
     this.camp = null;
@@ -223,6 +226,14 @@ export class Game {
     // to find their feet and see the basin first.
     this.firstStand = new FirstStand();
     this.standDelay = skipped ? 26 : 16;
+
+    // Coming down in a helicopter is not an establishing shot, it is an
+    // injury. Unless the whole story was skipped, the arrival takes over: you
+    // black out, come round beside the burning wreck, and the implant walks
+    // you through your first tools before anything is allowed to attack you.
+    this.arrival = new Arrival();
+    this.arrival.begin(this, skipped);
+    this.standDelay = 999;        // nothing happens until Pip is finished
   }
 
   start() {
@@ -279,12 +290,21 @@ export class Game {
 
     const stand = this.firstStand;
     const standing = !!(stand && stand.active);
+    const arriving = !!(this.arrival && this.arrival.blocksStand);
 
     this.world.update(sdt);
     if (!lab) {
       this.fire.update(sdt, this);
-      // The director waits its turn: no waves until the first fight is done.
-      if (stand && !stand.finished) {
+      if (this.arrival) {
+        this.arrival.update(sdt, this);
+        // once the arrival lets go, the scripted first fight gets its timer
+        if (this.arrival.finished && this.standDelay > 900) this.standDelay = 30;
+      }
+      // The director waits its turn: no waves until the first fight is done,
+      // and no first fight until she is on her feet with a friend.
+      if (arriving) {
+        /* the basin holds its breath */
+      } else if (stand && !stand.finished) {
         if (!standing) {
           this.standDelay -= sdt;
           if (this.standDelay <= 0) stand.begin(this);
@@ -302,7 +322,10 @@ export class Game {
     }
 
     // During a cutscene the script owns the ferret.
-    const scripted = (lab && this.campaign.blockPlayer) ||
+    // Nothing may kill her while a script is holding her still — that is not
+    // difficulty, it is a soft-lock with a health bar.
+    if (this.blockPlayer) this.player.invuln = Math.max(this.player.invuln, 0.2);
+    const scripted = (lab && this.campaign.blockPlayer) || this.blockPlayer ||
       (standing && stand.cut && stand.cut.prompt == null && stand.phase !== 'fight');
     this.player.update(sdt, this, scripted);
     if (!lab) {
@@ -684,6 +707,17 @@ export class Game {
       consider(l, 'cache', 'OPEN THE CACHE', l.cache.x, l.cache.y, 30);
     }
 
+    // The wreck, while it is still burning and there is water in the bucket.
+    if (this.arrival && this.arrival.canDouse(this)) {
+      const w2 = this.arrival.wreck;
+      consider(w2, 'douse', 'POUR IT ON THE FIRE', w2.x, w2.y, 40);
+    }
+
+    // A bug is small and it is running away from you, so it only offers itself
+    // once you are genuinely on top of it.
+    const bug = this.wildlife.nearestBug(p.x, p.y, 20);
+    if (bug) consider(bug, 'bug', 'CATCH IT', bug.x, bug.y - bug.z, 20);
+
     if (!best) {
       const node = this.world.nearestNode(p.x, p.y, 22);
       if (node) {
@@ -699,6 +733,17 @@ export class Game {
     if (this.input.isPressed('interact')) {
       if (this.dialogue.isOpen && this.dialogue.advance()) return;
       switch (best.kind) {
+        case 'douse': this.arrival.douse(this); break;
+        case 'bug': {
+          const b = best.obj;
+          b.dead = true;
+          p.inv.add('bug', 1);
+          audio.play('pickup', { vol: 0.6, pitch: 1.3 });
+          particles.burst(b.x, b.y - b.z, 6, { colors: ['#8ad0a0', '#d8e8c8'], speed: 60, life: 0.4, vz: 40 });
+          particles.text(b.x, b.y - b.z - 12, 'BUG', '#8ad0a0', { life: 0.7 });
+          if (this.arrival) this.arrival.onBugCaught(this);
+          break;
+        }
         case 'npc': best.obj.interact(this); break;
         case 'feed': {
           const a = best.obj;
@@ -1772,8 +1817,10 @@ export class Game {
       this.drawWorldObject(r, o);
     }
 
-    if (!lab) this.fire.draw(r, this.time);
-    else this.campaign.drawWorld(r, this);
+    if (!lab) {
+      this.fire.draw(r, this.time);
+      if (this.arrival) this.arrival.drawWorld(r, this);
+    } else this.campaign.drawWorld(r, this);
     this.bullets.draw(r);
     this.drawCharges(r);
     this.drawChainArcs(r);
@@ -1840,6 +1887,7 @@ export class Game {
     this.hud.draw(r, this);
     if (lab) this.campaign.drawHud(r, ctx, this);
     else this.squad.drawHud(r, ctx, this);
+    if (this.arrival) this.arrival.drawHud(r, ctx, this);
     if (this.firstStand) this.firstStand.drawHud(r, ctx, this);
     this.panels.draw(r, this);
 

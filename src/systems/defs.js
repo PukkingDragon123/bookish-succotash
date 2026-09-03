@@ -22,6 +22,8 @@ export const RESOURCES = {
   ammo:      { name: 'Rounds', icon: 'ammo', color: '#c9a23c', hint: 'Crafted from gunpowder and iron.' },
   meds:      { name: 'Salve', icon: 'meds', color: '#e6e9e9', hint: 'Heals a chunk instantly.' },
   water:     { name: 'Water', icon: 'water', color: P.waterLight, carry: 4, hint: 'Fill at the river. Puts out fire.' },
+  bucket:    { name: 'Bark Bucket', icon: 'bucket', color: '#b08a52', carry: 1, hint: 'Bark and fibre. Doubles what you can carry from the river.' },
+  bug:       { name: 'Bugs', icon: 'bug', color: '#8ad0a0', hint: 'Under logs and in the long grass. Somebody in this basin loves them.' },
 
   // --- what the named places give up, and only they ------------------------
   // Every one of these comes from somewhere specific, which is the point: a
@@ -142,6 +144,16 @@ export function randomChipKey(rng = Math.random, luck = 0) {
 // --- crafting --------------------------------------------------------------
 // station: 'workbench' | 'forge' | null (anywhere)
 export const RECIPES = [
+  // The first thing you will ever make, and the only recipe in the game that
+  // needs no station — because when you make it there is nothing built, there
+  // is nobody to build it, and you have just walked away from a burning
+  // helicopter with a headache.
+  {
+    id: 'bucket', name: 'Bark Bucket', category: 'tool',
+    cost: { wood: 3, fiber: 1 }, give: { bucket: 1 },
+    repeatable: 1,
+    desc: 'Strip the bark, bind it with fibre. Holds water.',
+  },
   {
     id: 'gunpowder', name: 'Gunpowder', station: 'workbench', category: 'material',
     cost: { sulfur: 2, charcoal: 1, saltpeter: 1 }, give: { gunpowder: 3 },

@@ -986,6 +986,24 @@ export class BeastRig {
                sy + fy * this.headR * 0.42 + fx * this.headR * 0.52,
            Math.max(1.2, this.headR * 0.46), _c)
     }
+    if (c.extras.crest) {
+      // A jay's crest: a short swept peak off the back of the skull. It lies
+      // flatter at speed and stands up when the bird is alarmed, which at this
+      // size is most of how you read its mood.
+      const lay = 1 - Math.min(0.5, this.speed * 0.006) + this.alarm * 0.35;
+      const a = face - 2.05 - this.alarm * 0.22;
+      const bx = sx - fx * this.headR * 0.34, by = sy - fy * this.headR * 0.34;
+      const h = this.headR * (1.05 * lay);
+      for (let i = 0; i < 3; i++) {
+        const sp = a + (i - 1) * 0.30;
+        const tx = bx + Math.cos(sp) * h * (1 - Math.abs(i - 1) * 0.22);
+        const ty = by + Math.sin(sp) * h * (1 - Math.abs(i - 1) * 0.22);
+        _c = tint(coat.dark, -0.5);
+        taperSeg(pb, bx, by, tx, ty, this.headR * 0.34 + 1, 1.2, _c)
+        _c = i === 1 ? (coat.crest || coat.base) : tint(coat.crest || coat.base, -0.12);
+        taperSeg(pb, bx, by, tx, ty, this.headR * 0.28, 0.7, _c)
+      }
+    }
     this._ears(pb, sx, sy, face, coat);
 
     // nose and eye last: a face is where the reader looks first

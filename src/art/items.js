@@ -156,6 +156,31 @@ const ICONS = {
     ell(c, 5.5, 7, 4, 2.8, '#3a3630');
     speckle(c, 2, 5, 8, 4, '#c8a04a', 0.35, 7);
   },
+  // A strip of bark rolled into a cone and bound with fibre. It is not a
+  // carpenter's bucket because she has no hands and no nails.
+  bucket: (c) => {
+    rect(c, 2, 3, 7, 6, '#a97c46');
+    rect(c, 2, 3, 7, 1, '#c49a63');
+    rect(c, 3, 8, 5, 1, '#7a5730');
+    rect(c, 2, 5, 7, 1, '#8a6234');
+    rect(c, 1, 3, 1, 5, '#7a5730');
+    rect(c, 9, 3, 1, 5, '#7a5730');
+    rect(c, 3, 1, 5, 1, '#9a8a5c');       // the fibre handle
+    rect(c, 2, 2, 1, 1, '#9a8a5c');
+    rect(c, 8, 2, 1, 1, '#9a8a5c');
+  },
+  bug: (c) => {
+    ell(c, 5.5, 6, 2.6, 3, '#4e8a5e');
+    ell(c, 5.5, 5, 2.2, 2, '#8ad0a0');
+    ell(c, 5.5, 3, 1.6, 1.6, '#2f5c3c');
+    rect(c, 5, 6, 1, 3, '#2f5c3c');
+    rect(c, 2, 5, 2, 1, '#2f5c3c');
+    rect(c, 7, 5, 2, 1, '#2f5c3c');
+    rect(c, 2, 8, 2, 1, '#2f5c3c');
+    rect(c, 7, 8, 2, 1, '#2f5c3c');
+    rect(c, 4, 2, 1, 1, '#d8e8c8');
+    rect(c, 6, 2, 1, 1, '#d8e8c8');
+  },
 };
 export const ICON_NAMES = Object.keys(ICONS);
 

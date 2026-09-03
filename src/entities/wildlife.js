@@ -80,7 +80,7 @@ export class Animal {
     this.w = s.w; this.h = s.h;
   }
 
-  get name() { return this.def.name; }
+  get name() { return this.nick || this.def.name; }
   get fights() {
     if (!this.bonded) return false;
     return [TEMPER.BOLD, TEMPER.DEFENSIVE, TEMPER.PACK, TEMPER.AGGRO].includes(this.def.temper)
@@ -196,6 +196,9 @@ export class Animal {
   // --- update --------------------------------------------------------------
   update(dt, game) {
     if (this.dead) return;
+    // Somebody else is flying this one. Pip walks his own beats during the
+    // arrival, and the grazing AI would only pull him back into the trees.
+    if (this.scripted) { this.animT = (this.animT || 0) + dt; return; }
     const world = game.world;
     this.hurtT = Math.max(0, this.hurtT - dt);
     this.stateT -= dt;
@@ -795,6 +798,29 @@ export class Wildlife {
   }
 
   /** Closest animal you could plausibly interact with (feed, revive, equip). */
+  /** The nearest catchable insect. They are tiny, so the radius is tiny. */
+  nearestBug(x, y, r) {
+    let best = null, bd = r * r;
+    for (const b of this.bugs) {
+      if (b.dead) continue;
+      const d = dist2(x, y, b.x, b.y - b.z * 0.5);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
+  }
+
+  /** Put one bug somewhere specific — the jay's quest needs them to hand. */
+  spawnBugAt(x, y) {
+    const w = this.world;
+    const tx = Math.floor(x / TS), ty = Math.floor(y / TS);
+    if (!w.inBounds(tx, ty)) return null;
+    const id = w.tileAt(tx, ty);
+    if (isWater(id) || isSolid(id)) return null;
+    const b = new Bug(pick(['beetle', 'moth', 'grasshopper', 'firefly']), x, y);
+    this.bugs.push(b);
+    return b;
+  }
+
   nearestFriendly(x, y, r) {
     let best = null, bd = r * r;
     for (const a of this.animals) {

@@ -371,6 +371,35 @@ export const BEASTS = {
     },
   },
 
+  // The one bird in the basin that came looking for you rather than away. A
+  // blue jay is a corvid with a crest, and the crest is most of the read at
+  // this size — so it sits on the head as its own piece rather than a colour.
+  bluejay: {
+    name: 'Blue Jay', hp: 20, speed: 74, mass: 1, r: 4, flying: true, rescueValue: 1,
+    temper: TEMPER.BOLD, role: 'flyer', ability: 'scout',
+    personality: 'Talks first, thinks about it later, means every word of it.',
+    pros: 'Knows the whole basin and will tell you about all of it',
+    cons: 'Will tell you about all of it',
+    likes: ['berries', 'bug'], trustRate: 1.6,
+    biomes: [6, 7, 8, 9],
+    cfg: {
+      scale: 0.78,
+      body: { len: 3.6, hgt: 3.7, chest: 1.2, haunch: 0.84, tilt: 0.40 },
+      neck: { len: 1.2, thick: 2.0 },
+      head: { r: 2.3, muzzle: 2.0, muzzleH: 1.3, snout: 'beak' },
+      ears: { style: 'none', size: 0, spread: 0 },
+      legs: { len: 2.7, thick: 1.1, spread: 1.6, count: 2, foot: 'paw', digitigrade: false },
+      tail: { style: 'fan', len: 7, thick: 1.1 },
+      eye: { r: 1, color: '#1a1a20' },
+      coat: {
+        base: '#3f74c8', dark: '#22447e', light: '#6fa2e6', hi: '#a8ccf4',
+        belly: '#e8eef6', muzzle: '#1a1a20', nose: '#15151a',
+        wingBar: '#f2f6fb', crest: '#2f5aa4',
+      },
+      extras: { wings: true, crest: 1 },
+    },
+  },
+
   magpie: {
     name: 'Magpie', hp: 18, speed: 72, mass: 1, r: 4, flying: true, rescueValue: 1,
     temper: TEMPER.FLEE, role: 'flyer', ability: 'thieve',
