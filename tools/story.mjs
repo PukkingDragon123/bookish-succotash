@@ -323,6 +323,19 @@ const fin = await snap();
 check('the basin is generated big', fin.worldW >= 300, 'world width ' + fin.worldW + ' tiles');
 check('you carry a gun out', fin.weapons.includes('popper'), fin.weapons.join());
 check('60fps held through the campaign', fin.fps >= 50, fin.fps + ' fps');
+// --- the arrival: you wake at the wreck before anything is allowed at you ---
+const arr = await page.evaluate(() => {
+  const a = window.game.arrival;
+  return a ? { phase: a.phase, wreck: !!a.wreck, blocks: a.blocksStand, obj: a.objective } : null;
+});
+check('you come round at the crash site, not running', !!arr && !!arr.wreck, JSON.stringify(arr));
+check('nothing is allowed at you until it is done', !!arr && arr.blocks === true, JSON.stringify(arr));
+
+// Play it the way the skip button does, then the basin is live.
+await page.evaluate(() => { const g = window.game; if (g.arrival) g.arrival.skip(g); });
+check('finishing it hands the basin over', await waitFor(() => true, 200) &&
+  await page.evaluate(() => !!(window.game.arrival && window.game.arrival.finished)));
+
 // the first fight, which you lose, starts on its own once you are on your feet
 await page.evaluate(() => { window.game.standDelay = 0.4; });
 const ambush = await waitFor(() => true, 100) &&
